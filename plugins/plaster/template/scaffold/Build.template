@@ -10,6 +10,8 @@ param (
     [parameter(ParameterSetName = 'UpdateRelease')]
     [version]$NewVersion,
     [parameter(ParameterSetName = 'UpdateRelease')]
+    [switch]$AutoNewVersion,
+    [parameter(ParameterSetName = 'UpdateRelease')]
     [string]$ReleaseNotes,
     [parameter(ParameterSetName = 'UpdateRelease')]
     [switch]$UploadPSGallery,
@@ -108,7 +110,11 @@ switch ($psCmdlet.ParameterSetName) {
     'UpdateRelease' {
         if ($UpdateRelease) {
             try {
-                Invoke-Build -Task UpdateRelease -NewVersion $NewVersion -ReleaseNotes $ReleaseNotes
+                if ($AutoNewVersion) {
+                    Invoke-Build -Task AutomaticNewVersion -ReleaseNotes $ReleaseNotes
+                } else {
+                    Invoke-Build -Task UpdateRelease -NewVersion $NewVersion -ReleaseNotes $ReleaseNotes
+                }
             }
             catch {
                 throw $_
