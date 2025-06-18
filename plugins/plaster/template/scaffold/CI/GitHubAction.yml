@@ -1,0 +1,156 @@
+# This is a basic workflow to help you get started with Actions
+
+name: CICD-Build
+run-name: Deploy Branch ${{ github.ref_name }} by ${{ github.actor }}
+
+# Controls when the workflow will run
+on:
+  # Triggers the workflow on push or pull request events but only for the "master" branch
+  push:
+    branches: [ "master","main" ]
+    paths-ignore:
+      - 'docs/**'
+      - "**/*.md"
+      - "appveyor.yml"
+
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+
+env:
+  NugetRepository: "${{ vars.NUGETREPOSITORY }}"
+  NugetRepositorySourceLocation: "https://nuget.dev.iconic-it.com/nuget"
+  NugetRepositoryPublishLocation: "https://nuget.dev.iconic-it.com/nuget"
+  NugetRepositoryScriptSourceLocation: "https://nuget.dev.iconic-it.com/nuget"
+  NugetRepositoryScriptPublishLocation: "https://nuget.dev.iconic-it.com/nuget"
+  NugetAPIKey: ${{ secrets.NUGETAPIKEY }}
+  GithubPAT: ${{ secrets.GITHUBPAT }}
+
+# A workflow run is made up of one or more jobs that can run sequentially or in parallel
+
+# validate
+# compile
+# test
+# package
+# verify
+# install
+# deploy
+
+jobs:
+
+  build:
+    # The type of runner that the job will run on
+    runs-on: windows-latest
+
+    # Steps represent a sequence of tasks that will be executed as part of the job
+    steps:
+      - run: echo "Building ${{ github.repository }}/${{ github.ref_name }} by ${{ github.actor }} on ${{ runner.os }}"
+
+      - name: Show PSVersion
+        shell: powershell
+        run: |
+          $PSVersionTable
+          "Built Using Powershell $($PSVersionTable.PSVersion)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Check for NugetRepository
+        shell: powershell
+        run: |
+          if ($env:NugetRepository) {
+            $Return = "NugetRepository is '$($env:NugetRepository)' and NugetAPIKey is '$($env:NugetAPIKey.substring(0,4))***$($env:NugetAPIKey.substring($env:NugetAPIKey.length-4,4))'"
+          } else {
+            $Return = "NugetRepository is 'PSGallery' and NugetAPIKey is '$($env:NugetAPIKey.substring(0,4))***$($env:NugetAPIKey.substring($env:NugetAPIKey.length-4,4))'"
+          }
+          Write-Host $Return
+          $Return | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Check for GithubPAT
+        shell: powershell
+        run: |
+          if ($env:GithubPAT) {
+            $Return = "GithubPAT is '$($env:GithubPAT.substring(0,4))***$($env:GithubPAT.substring($env:GithubPAT.length-4,4))'"
+          } else {
+            $Return = "GithubPAT is null"
+          }
+          Write-Host $Return
+          $Return | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get Push Details
+        shell: powershell
+        run: |
+          $env:github_push_title = git show --pretty=format:%s -s HEAD
+          $env:github_author_name = git show --pretty=format:%an -s HEAD
+          $env:github_author_email = git show --pretty=format:%ae -s HEAD
+          "github_push_title=$env:github_push_title" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "github_author_name=$env:github_author_name" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "github_author_email=$env:github_author_email" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "Found title $env:github_push_title"
+
+      - name: Update Summary with push title
+        shell: powershell
+        run: |
+          $Return = "Running Build of push '$($env:github_push_title)' by $($env:github_author_name) on branch '$($env:GITHUB_REF_NAME)'."
+          write-host $Return
+          $Return | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: Run Build Test of push '${{ env.github_push_title }}'
+        shell: powershell
+        run: |
+          Set-PSRepository PSGallery -InstallationPolicy Trusted
+          . .\Build.ps1 -Test
+
+      - name: Register PSRepository '${{ env.NugetRepository }}'
+        shell: powershell
+        run: |
+          if (-not $env:NugetRepository) {
+            Write-output "No NugetRepository specified, using PSGallery" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } elseif ($env:NugetRepository -eq "PSGallery") {
+            Write-output "Using PSGallery as NugetRepository" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } else {
+            Write-output "Using $env:NugetRepository as NugetRepository" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            Register-PSRepository -Name $env:NugetRepository -InstallationPolicy "Trusted" -SourceLocation $env:NugetRepositorySourceLocation -PublishLocation $env:NugetRepositoryPublishLocation -ScriptSourceLocation $env:NugetRepositoryScriptSourceLocation -ScriptPublishLocation $env:NugetRepositoryScriptPublishLocation
+          }
+
+      - name: Update Release Version
+        id: Update-ModuleVersion
+        shell: powershell
+        run: |
+          Write-Host "Using NugetRepository: '$env:NugetRepository'"
+          Write-Host "  Setting ReleaseNotes to '$env:github_push_title'"
+          . .\Build.ps1 -UpdateRelease -AutoNewVersion -ReleaseNotes $env:github_push_title
+          "ModuleVersion=$env:ModuleVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "Build Version $env:ModuleVersion" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+      - name: BuildModule Version '${{ env.ModuleVersion }}'
+        shell: powershell
+        run: |
+          Write-Host "Using NugetRepository: '$env:NugetRepository'"
+          . .\Build.ps1 -BuildModule
+
+      - name: Configure Git to push to GitHub
+        shell: powershell
+        run: |
+          if ($env:GithubPAT) {
+            git config --global credential.helper store
+            Set-Content -Path "$HOME\.git-credentials" -Value "https://$($env:GithubPAT):x-oauth-basic@github.com`n" -NoNewline
+          }
+          git config --global user.name "$env:github_author_name"
+          git config --global user.email "$env:github_author_email"
+          git config --global --list | Where-Object {$_ -match 'user.*'}
+
+      - name: Push Release info to github
+        shell: powershell
+        env:
+          GithubPAT: ${{ vars.GithubPAT }}
+        run: |
+          . .\Build.ps1 -GithubPushVersionRelease
+
+      - name: Upload to PSRepository
+        shell: powershell
+        env:
+          NugetRepository: ${{ vars.NUGETREPOSITORY }}
+          NugetAPIKey: ${{ secrets.NUGETAPIKEY }}
+        run: |
+          . .\Build.ps1 -UploadPSGallery

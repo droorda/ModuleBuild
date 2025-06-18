@@ -76,6 +76,10 @@
         label="&amp;AppVeyor"
         help="CI/CD service for Windows, Linux and macOS. Build, test, deploy your apps faster, on any platform"
         value="appveyor" />
+      <choice
+        label="&amp;Github"
+        help="CI/CD service for Windows, Linux and macOS. Build, test, deploy your apps faster, on any platform"
+        value="github" />
     </parameter>
     <parameter
       name="OptionAnalyzeCode"
@@ -299,6 +303,10 @@
       source="scaffold\CI\appveyor.yml"
       destination="appveyor.yml"
       condition="$PLASTER_PARAM_CICD -eq &quot;appveyor&quot;" />
+    <file
+      source="scaffold\CI\GitHubAction.yml"
+      destination=".github\workflows\GitHubAction.yml"
+      condition="$PLASTER_PARAM_CICD -eq &quot;Github&quot;" />
     <file
       source="scaffold\Requirements.psd1"
       destination="Requirements.psd1" />
