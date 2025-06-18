@@ -1066,31 +1066,23 @@ task BuildSessionCleanup CleanScratchDirectory, {
 
 #region Main tasks
 # Synopsis: Run all tests
-task Tests RunMetaTests, RunUnitTests, RunIntergrationTests, {
+task Tests RunMetaTests, RunUnitTests, RunIntergrationTests
 
-}
 # Synopsis: Build the module
-task Build Configure, CodeHealthReport, PrepareStage, GetPublicFunctions, SanitizeCode, CreateHelp, CreateModulePSM1, CreateModuleManifest, AnalyzeModuleRelease, PushVersionRelease, PushCurrentRelease, CreateProjectHelp, PostBuildTasks, BuildSessionCleanup, {
-
-}
+task Build Configure, CodeHealthReport, PrepareStage, GetPublicFunctions, SanitizeCode, CreateHelp, CreateModulePSM1, CreateModuleManifest, AnalyzeModuleRelease, PushVersionRelease, PushCurrentRelease, CreateProjectHelp, PostBuildTasks, BuildSessionCleanup
 
 # Synopsis: Test, Build, install and Test load the module.
-task TestBuildAndInstallModule Tests, Build, InstallModule, TestImportInstalledModule, BuildSessionCleanup, {
-
-}
+task TestBuildAndInstallModule Tests, Build, InstallModule, TestImportInstalledModule, BuildSessionCleanup
 
 # Synopsis: Test, Build, Install, Test load and Publish the module
-task BuildInstallTestAndPublishModule TestBuildAndInstallModule, PublishPSGallery, BuildSessionCleanup, {
-
-}
+task BuildInstallTestAndPublishModule TestBuildAndInstallModule, GithubPushVersionRelease, PublishPSGallery, BuildSessionCleanup
 
 # Synopsis: Insert Comment Based Help where it doesn't already exist (output to scratch directory)
-task AddMissingCBH Configure, CleanScratchDirectory, InsertCBHInPublicFunctions, BuildSessionCleanup, {
-
-}
+task AddMissingCBH Configure, CleanScratchDirectory, InsertCBHInPublicFunctions, BuildSessionCleanup
 
 # Synopsis: Default task when running Invoke-Build
 task . Build
 #endregion
+
 
 
