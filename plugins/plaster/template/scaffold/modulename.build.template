@@ -235,6 +235,7 @@ task LoadModule {
         $Script:Module = Import-Module $ModuleFullPath -Force -PassThru
     }
     catch {
+        Write-Warning $_.Exception.Message
         throw "Unable to load the project module: $($ModuleFullPath)"
     }
 }
@@ -894,12 +895,19 @@ task TestImportInstalledModule VersionCheck, {
     if ($InstalledModules.Count -gt 1) {
         Write-Warning 'There are multiple installed modules found for this project (shown below). Be aware that this may skew the test results: '
     }
-    Import-Module -Name $Script:BuildEnv.ModuleToBuild -MinimumVersion $Script:BuildEnv.ModuleVersion -Force
+    Try {
+        Import-Module -Name $Script:BuildEnv.ModuleToBuild -MinimumVersion $Script:BuildEnv.ModuleVersion -Force -ErrorAction Stop
+    } Catch {
+        Write-Warning ('Unable to Load Module: ' + $_.Exception.Message)
+        Write-Host "Module Details:`n$($InstalledModules | Format-List Name,Path,ModuleBase,ModuleType,Version,Author,ExportedFunctions,ExportedCommands,RootModule)" -ForegroundColor Yellow
+        Write-Host "Module Files`n$($InstalledModules.ModuleBase | Get-ChildItem | Format-Table | Out-String)" -ForegroundColor Yellow
+    }
 }
 
 # Synopsis: Push the current release of the project to PSScriptGallery
 task PublishPSGallery LoadRequiredModules, InstallModule, {
-    Write-Description White 'Publishing recent module release to the PowerShell Gallery' -accent
+    Write-Description Magenta 'Publishing recent module release to the PowerShell Gallery' -accent
+    assert ($Script:BuildEnv.NuGetApiKey) 'NuGetApiKey must be supplied to Publish Modules'
 
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
     $CurrentReleasePath = Join-Path $ReleasePath $Script:BuildEnv.ModuleToBuild
@@ -1145,6 +1153,7 @@ task GithubPush VersionCheck, {
 # Synopsis: Push with a version tag.
 task GitPushRelease VersionCheck, {
     $changes = exec { git status --short }
+    assert (-not $changes) "Please, commit changes.`n$changes"
 
     exec { git push }
     exec { git tag -a "v$($Script:BuildEnv.ModuleVersion)" -m "v$($Script:BuildEnv.ModuleVersion)" }
