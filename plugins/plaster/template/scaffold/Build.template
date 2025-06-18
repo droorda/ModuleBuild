@@ -141,15 +141,15 @@ switch ($psCmdlet.ParameterSetName) {
             }
         }
     }
-    'Tests' {
-        if ($test) {
-            try {
-                Invoke-Build -Task tests
-            }
-            catch {
-                throw
-            }
+    'Test' {
+        try {
+            Invoke-Build -Task tests
         }
+        catch {
+            throw
+        }
+    }
+    'Tests' {
         if ($TestMetaOnly) {
             try {
                 Invoke-Build -Task RunMetaTests
