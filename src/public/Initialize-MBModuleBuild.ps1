@@ -34,7 +34,23 @@ function Initialize-MBModuleBuild {
         [parameter(Position = 0, ValueFromPipeline = $TRUE)]
         [String]$Path,
         [parameter(Position = 1)]
-        [String]$SourceModule
+        [String]$SourceModule,
+        [String]$ModuleName,
+        [String]$ModuleDescription,
+        [String]$ModuleAuthor,
+        [String]$ModuleCompanyName,
+        [String]$ModuleWebsite,
+        [String]$ModuleVersion,
+        [String]$ModuleTags,
+        [String]$ProjectLicense,
+        [String]$CICD,
+        [bool]$OptionAnalyzeCode,
+        [bool]$OptionCodeHealthReport,
+        [bool]$OptionUpdateVersionAfterPublishing,
+        [bool]$OptionSanitizeSensitiveTerms,
+        [bool]$OptionGenerateReadTheDocs,
+        [bool]$PluginModuleLogging
+
     )
     begin {
         if ($script:ThisModuleLoaded -eq $true) {
@@ -99,6 +115,28 @@ Enjoy!
                 $PlasterParams.DestinationPath = $Path
             }
 
+            @(
+                'ModuleName'
+                'ModuleDescription'
+                'ModuleAuthor'
+                'ModuleCompanyName'
+                'ModuleWebsite'
+                'ModuleVersion'
+                'ModuleTags'
+                'ProjectLicense'
+                'CICD'
+                'OptionAnalyzeCode'
+                'OptionCodeHealthReport'
+                'OptionUpdateVersionAfterPublishing'
+                'OptionSanitizeSensitiveTerms'
+                'OptionGenerateReadTheDocs'
+                'PluginModuleLogging'
+            ) | ForEach-Object {
+                if (-not [string]::IsNullOrEmpty((Get-Variable -Name $_ -ValueOnly -ErrorAction SilentlyContinue))) {
+                    $PlasterParams[$_] = Get-Variable -Name $_ -ValueOnly
+                }
+            }
+
             if (get-module Plaster) {
                 Write-Output 'Removing already loaded version of Plaster as we need to use our custom version instead..'
                 Remove-Module Plaster -Force
@@ -123,10 +161,10 @@ Enjoy!
             powershell -noprofile -file $($BuildDefinition.FullName)
             Try {
                 if ((Test-Path -Path ($BuildDefinition.FullName -replace '.ps1','.json')) -eq 'True') {
-                   Write-Verbose 'Found JSON file.'
+                    Write-Verbose 'Found JSON file.'
                 } Else {
-                   Write-Error 'Could not find JSON file' -ErrorAction Stop
-               }
+                    Write-Error 'Could not find JSON file' -ErrorAction Stop
+                }
             }
             catch {
                 Write-Error $PSItem
@@ -139,6 +177,7 @@ Enjoy!
 
             Remove-Module Plaster -Force
         } Catch {
+            Write-Warning ($_.Exception.Message + "`n" + $_.Exception.StackTrace)
             $PSCmdlet.ThrowTerminatingError()
         }
     }
