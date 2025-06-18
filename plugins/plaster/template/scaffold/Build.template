@@ -84,13 +84,13 @@ switch ($psCmdlet.ParameterSetName) {
             }
         }
 
-        # Test, Build Installd and test load the module
+        # Test, Build Install and test load the module
         if ($TestBuildAndInstallModule) {
             try {
                 Invoke-Build -Task TestBuildAndInstallModule
             }
             catch {
-                Write-Host 'Test, Build Installd and test load the module of the module failed:'
+                Write-Host 'Test, Build Install and test load of the module failed:'
                 throw $_
             }
         }
@@ -105,7 +105,7 @@ switch ($psCmdlet.ParameterSetName) {
             }
         }
     }
-     'UpdateRelease' {
+    'UpdateRelease' {
         if ($UpdateRelease) {
             try {
                 Invoke-Build -Task UpdateRelease -NewVersion $NewVersion -ReleaseNotes $ReleaseNotes
