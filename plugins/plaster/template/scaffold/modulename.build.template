@@ -1087,6 +1087,10 @@ task BuildSessionCleanup CleanScratchDirectory, {
 #endregion
 
 #region Main tasks
+
+# Synopsis: Automatically Determine New Version instead of Prompting
+task AutomaticNewVersion DetectNewVersion, NewVersion
+
 # Synopsis: Run all tests
 task Tests RunMetaTests, RunUnitTests, RunIntergrationTests
 
