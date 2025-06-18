@@ -1,16 +1,131 @@
 # See http://www.appveyor.com/docs/appveyor-yml for many more options
-# Allow WMF5 (i.e. PowerShellGallery functionality)
-os: WMF 5
+
+# Notes:
+#   - Minimal appveyor.yml file is an empty file. All sections are optional.
+#   - Indent each level of configuration with 2 spaces. Do not use tabs!
+#   - All section names are case-sensitive.
+#   - Section names should be unique on each level.
+
+#---------------------------------#
+#      general configuration      #
+#---------------------------------#
+
+# version format
+version: 0.0.0.{build}
+
+# branches to build
+branches:
+  # whitelist
+  only:
+    - master
+    - main
+
+# Do not build on tags (GitHub, Bitbucket, GitLab, Gitea)
+skip_tags: true
 
 # Skip on updates to the readme.
 # We can force this by adding [skip ci] or [ci skip] anywhere in commit message
 skip_commits:
-  files:
-    - "**/*.md"
-  message: /updated readme.*|update readme.*s|update docs.*|update version.*|update appveyor.*/
-
+  message: /updated readme.*|update readme.*s|update docs.*|update version.*|update appveyor.*|Build .*/
+  # files:
+  #   - 'docs/**'
+  #   - "**/*.md"
+  #   - ".github/**/*"
 build: false
 
+only_commits:
+  files:
+    - src/**/*
+
+
+#---------------------------------#
+#    environment configuration    #
+#---------------------------------#
+
+# Build worker image (VM template)
+image: Visual Studio 2022
+
+environment:
+  NugetRepository: IconicIT
+  NugetAPIKey:
+    secure: pE5deO/BDm4FaWVfZ10xz6Uv1ESgLHOKe/MPup1Qvjh3wDnEGVrIL2G5LUdM6jnwzENEi4jixnaLegWVJoHjvA==
+  GithubPAT:
+    secure: 0xvBsljqKlpJQfANjNVJUBIsGAHM7wU1JmMwyNh9zc4M/qHo4n07J0J2ilHR86TdYXsJ17xDwgbgaS+RsrNeHL0loJJ0ZRKWTPDbWcPoCLL0Kjsw4en+YOPMRBE9XIr8
+
 # Kick off the CI/CD pipeline
+#---------------------------------#
+#       build configuration       #
+#---------------------------------#
+
+
+
+# scripts to run before build
+before_build:
+
+# to run your custom scripts instead of automatic MSBuild
+#pwsh not supported till after PlatyPS 1.0 is released
+build_script:
+  - ps: . .\Build.ps1 -Test
+
+# scripts to run after build (working directory and environment changes are persisted from the previous steps)
+after_build:
+  - ps: Register-PSRepository -Name "IconicIT" -InstallationPolicy "Trusted" -SourceLocation "https://nuget.dev.iconic-it.com/nuget" -PublishLocation "https://nuget.dev.iconic-it.com/nuget" -ScriptSourceLocation "https://nuget.dev.iconic-it.com/nuget" -ScriptPublishLocation "https://nuget.dev.iconic-it.com/nuget"
+  - git config --global credential.helper store
+  - ps: Set-Content -Path "$HOME\.git-credentials" -Value "https://$($env:GithubPAT):x-oauth-basic@github.com`n" -NoNewline
+  - git config --global user.email "%APPVEYOR_REPO_COMMIT_AUTHOR_EMAIL%"
+  - git config --global user.name "%APPVEYOR_REPO_COMMIT_AUTHOR%"
+  - git checkout %APPVEYOR_REPO_BRANCH%
+
+# scripts to run *after* solution is built and *before* automatic packaging occurs (web apps, NuGet packages, Azure Cloud Services)
+before_package:
+
+#---------------------------------#
+#       tests configuration       #
+#---------------------------------#
+
+# scripts to run before tests (working directory and environment changes are persisted from the previous steps such as "before_build")
+before_test:
+  - ps: . .\Build.ps1 -UpdateRelease -AutoNewVersion -ReleaseNotes "$env:APPVEYOR_PULL_REQUEST_TITLE"
+
 test_script:
-  - ps: . .\Build.ps1 -TestBuildAndInstallModule
+  - ps: . .\Build.ps1 -BuildModule
+
+# scripts to run after tests
+after_test:
+
+# to disable automatic tests
+#test: off
+
+#---------------------------------#
+#      artifacts configuration    #
+#---------------------------------#
+
+#---------------------------------#
+#     deployment configuration    #
+#---------------------------------#
+
+# scripts to run before deployment
+before_deploy:
+  - ps: . .\Build.ps1 -GithubPushVersionRelease
+
+# to run your custom scripts instead of provider deployments
+deploy_script:
+  - ps: . .\Build.ps1 -UploadPSGallery
+
+# scripts to run after deployment
+after_deploy:
+
+#---------------------------------#
+#        global handlers          #
+#---------------------------------#
+
+#---------------------------------#
+#         notifications           #
+#---------------------------------#
+
+notifications:
+
+  # Slack
+  # - provider: Slack
+  #   incoming_webhook: http://incoming-webhook-url
+
