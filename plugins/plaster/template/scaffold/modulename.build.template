@@ -381,13 +381,12 @@ task RunPSScriptAnalyzeOnPublicSrcFunctions {
 task RunMetaTests LoadRequiredModules, {
     Write-Description Magenta 'Running meta tests with Pester' -accent
     $ENV:BuildRoot = $BuildRoot
-    $invokePesterParams = @{
-        Strict = $true
-        PassThru = $true
-        Verbose = $false
-        EnableExit = $false
-    }
-    $testResults = Invoke-Pester -Tag 'MetaTest' $(Join-Path $BuildRoot 'Tests') @invokePesterParams
+    $config = New-PesterConfiguration
+    $config.Run.PassThru = $true
+    $config.Run.Exit = $false
+    $config.Filter.Tag = @('MetaTest')
+    $config.Run.Path = $(Join-Path $BuildRoot 'Tests')
+    $testResults = Invoke-Pester -Configuration $config
     $numberFails = $testResults.FailedCount
     assert($numberFails -eq 0) ('Failed "{0}" meta tests.' -f $numberFails)
 }
@@ -395,13 +394,12 @@ task RunMetaTests LoadRequiredModules, {
 task RunUnitTests LoadRequiredModules, {
     Write-Description Magenta 'Running Unit tests with Pester' -accent
     $ENV:BuildRoot = $BuildRoot
-    $invokePesterParams = @{
-        Strict = $true
-        PassThru = $true
-        Verbose = $false
-        EnableExit = $false
-    }
-    $testResults = Invoke-Pester -tag 'UnitTest' $(Join-Path $BuildRoot 'Tests') @invokePesterParams
+    $config = New-PesterConfiguration
+    $config.Run.PassThru = $true
+    $config.Run.Exit = $false
+    $config.Filter.Tag = @('UnitTest')
+    $config.Run.Path = $(Join-Path $BuildRoot 'Tests')
+    $testResults = Invoke-Pester -Configuration $config
     $numberFails = $testResults.FailedCount
     assert($numberFails -eq 0) ('Failed "{0}" unit tests.' -f $numberFails)
 }
@@ -409,13 +407,12 @@ task RunUnitTests LoadRequiredModules, {
 task RunIntergrationTests LoadRequiredModules, {
     Write-Description Magenta 'Running Intergration tests with Pester' -accent
     $ENV:BuildRoot = $BuildRoot
-    $invokePesterParams = @{
-        Strict = $true
-        PassThru = $true
-        Verbose = $false
-        EnableExit = $false
-    }
-    $testResults = Invoke-Pester -tag 'IntergrationTest' $(Join-Path $BuildRoot 'Tests') @invokePesterParams
+    $config = New-PesterConfiguration
+    $config.Run.PassThru = $true
+    $config.Run.Exit = $false
+    $config.Filter.Tag = @('IntergrationTest')
+    $config.Run.Path = $(Join-Path $BuildRoot 'Tests')
+    $testResults = Invoke-Pester -Configuration $config
     $numberFails = $testResults.FailedCount
     assert($numberFails -eq 0) ('Failed "{0}" unit tests.' -f $numberFails)
 }
