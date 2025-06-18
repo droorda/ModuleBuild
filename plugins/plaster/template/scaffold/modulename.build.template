@@ -217,7 +217,12 @@ task LoadRequiredModules {
     $Script:PSDependBuildModules = Invoke-PSDepend -Path $PSDependBuildFile -Test | Select-Object Version,DependencyName,DependencyType
     Invoke-PSDepend -Path $PSDependBuildFile -Import -Force
     $Script:PSDependBuildModules | ForEach-Object {
-        Write-Description White "Installed version $($_.Version) of $($_.DependencyName) from $($_.DependencyType)" -Level 2
+        if ($_.DependencyType -eq 'PSGalleryModule') {
+            $LoadedModule = Get-Module -Name $_.DependencyName
+            Write-Description Magenta "Installed version $($LoadedModule.Version) of $($_.DependencyName) from $($_.DependencyType)" -Level 2
+        } else {
+            Write-Description Magenta "Installed version $($_.Version) of $($_.DependencyName) from $($_.DependencyType)" -Level 2
+        }
     }
 }
 
