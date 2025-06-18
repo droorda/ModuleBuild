@@ -50,6 +50,7 @@ function PrerequisitesLoaded {
         }
     }
     catch {
+        Write-Warning $_.Exception.Message
         return $false
     }
 }
@@ -61,7 +62,9 @@ function CleanUp {
         Invoke-Build -Task BuildSessionCleanup
         Remove-Module InvokeBuild
     }
-    catch {}
+    catch {
+        Write-Verbose $_.Exception.Message
+    }
 }
 
 if (-not (PrerequisitesLoaded)) {
