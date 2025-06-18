@@ -4,8 +4,8 @@
 # These files are text and should be normalized (convert crlf => lf)
 # Git Files
 .gitattributes text eol=lf
-.gitignore text eol=lf
-.gitconfig text eol=lf
+.gitignore     text eol=lf
+.gitconfig     text eol=lf
 
 # cSharp / Visual Studio
 *.bat     text eol=crlf
@@ -16,7 +16,8 @@
 *.md      text eol=crlf
 *.msbuild text eol=crlf
 *.ps1     text eol=crlf
-*.psm1     text eol=crlf
+*.psd1    text eol=crlf
+*.psm1    text eol=crlf
 *.sdf     binary
 *.sln     text eol=crlf
 *.tt      text eol=crlf
@@ -50,12 +51,12 @@
 *.zip     binary
 *.7z      binary
 *.nupkg   binary
-*.cab   binary
+*.cab     binary
 
 # Fonts
-*.ttf       binary
-*.eot       binary
-*.woff      binary
+*.ttf     binary
+*.eot     binary
+*.woff    binary
 
 # Config
 *.conf text eol=lf
@@ -72,17 +73,17 @@
 *.rtf  diff=astextplain
 *.RTF  diff=astextplain
 
-*.txt text eol=lf
-*.md text eol=lf
-*.adoc text eol=lf
+*.txt     text eol=lf
+*.md      text eol=lf
+*.adoc    text eol=lf
 *.textile text eol=lf
-*.csv text eol=lf
-*.tab text eol=lf
-*.tsv text eol=lf
-*.sql text eol=lf
-*.psd binary
-*.ai binary
-*.eps binary
+*.csv     text eol=lf
+*.tab     text eol=lf
+*.tsv     text eol=lf
+*.sql     text eol=lf
+*.psd     binary
+*.ai      binary
+*.eps     binary
 
 # Compiled Dynamic libraries
 *.so      binary
@@ -91,10 +92,10 @@
 *.pdb     binary
 
 # Compiled Static libraries
-*.lai   binary
-*.la    binary
-*.a     binary
-*.lib   binary
+*.lai         binary
+*.la          binary
+*.a           binary
+*.lib         binary
 *.llblgenproj binary
 
 # Executables
