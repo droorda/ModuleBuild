@@ -923,6 +923,99 @@ task PublishPSGallery LoadRequiredModules, InstallModule, {
     }
 }
 
+# Synopsis: Validates that appveyor is using the next available version or higher
+task DetectNewVersion LoadRequiredModules, LoadModuleManifest, {
+    Write-Description Magenta 'Validating Appveyor, manifest, build, and gallery module versions.' -accent
+
+    [Version]$NewVersion = '0.0'
+    if ($NewVersion -lt ($Script:Manifest).Version) {
+        Write-Verbose "Setting NewVersion = $(($Script:Manifest).Version) from Manifest.Version"
+        [Version]$NewVersion = ($Script:Manifest).Version
+        $NewVersionSource = "Manifest"
+    }
+    if ($NewVersion -lt $Script:BuildEnv.ModuleVersion) {
+        Write-Verbose "Setting NewVersion = $($Script:BuildEnv.ModuleVersion) from BuildEnv.ModuleVersion"
+        [Version]$NewVersion = $Script:BuildEnv.ModuleVersion
+        $NewVersionSource = "BuildEnv"
+    }
+    $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
+    if (Test-path -Path $ReleasePath) {
+        $LatestBuild = Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -match '^([0-9]+(?:\.[0-9]+)+)$'} | ForEach-Object {[version]$_.Name} | Sort-Object -Descending | Select-Object -First 1
+        Write-Host "LatestBuild: $LatestBuild" -foregroundcolor Yellow
+        if ($LatestBuild -and ($LatestBuild -gt $NewVersion)) {
+            Write-Verbose "Setting NewVersion = $($LatestBuild) from LatestBuild"
+            [Version]$NewVersion = $LatestBuild
+            $NewVersionSource = "LatestBuild"
+        }
+    }
+    $GalleryVersion = Find-Module -Name ($Script:BuildEnv.ModuleToBuild) -Repository $Script:BuildEnv.NugetRepository -ErrorAction:SilentlyContinue
+    if ($GalleryVersion) {
+        $GalleryVersion = $GalleryVersion.Version.Split(".")
+        if ($GalleryVersion[2]) {$GalleryVersion[2] = [int]$GalleryVersion[2] + 1} else {$GalleryVersion += 0}
+        if ($GalleryVersion[3]) {$GalleryVersion[3] = [int]$GalleryVersion[3] + 1}
+        [Version]$GalleryVersion = $GalleryVersion -join '.'
+        if ($NewVersion -lt $GalleryVersion ) {
+            Write-Verbose "Setting NewVersion = $($GalleryVersion) from GalleryVersion"
+            [Version]$NewVersion = $GalleryVersion
+            $NewVersionSource = $Script:BuildEnv.NugetRepository
+        }
+    }
+    else {
+        Write-Description Magenta 'This module has not been published to the gallery so any version is ok to build at this point.' -Level 2
+    }
+
+    if (($env:APPVEYOR) -and ($NewVersion -lt [version]$env:APPVEYOR_BUILD_VERSION)) {
+        Write-Verbose "Setting NewVersion = $($env:APPVEYOR_BUILD_VERSION) from env:APPVEYOR_BUILD_VERSION"
+        [Version]$NewVersion = $env:APPVEYOR_BUILD_VERSION
+        $NewVersionSource = "Appveyor"
+    }
+
+    # If tracking revisions keep up with Appveyor count
+    if (($env:APPVEYOR) -and (($NewVersion.Revision -ge 0) -and ($env:APPVEYOR_BUILD_NUMBER -gt $NewVersion.Revision))) {
+        Write-Verbose "Setting NewVersion.Revision = $($env:APPVEYOR_BUILD_NUMBER) from env:APPVEYOR_BUILD_NUMBER"
+        [String[]]$NewVersion = $NewVersion.tostring().Split(".")
+        $NewVersion[3] = [int]$env:APPVEYOR_BUILD_NUMBER
+        [Version]$NewVersion = $NewVersion -join '.'
+    }
+
+    do {
+        $UpdateAppveyorBuildError = $False
+        if (($env:APPVEYOR) -and ($NewVersion -ne [version]$env:APPVEYOR_BUILD_VERSION)) {
+            Write-Description Magenta 'Updating Appveyor Version' -Level 2
+            Try {
+                Update-AppveyorBuild -Version $NewVersion -ErrorAction Stop
+            } catch {
+                if ($_.Exception.InnerException.message -eq 'Build with specified version already exists.') {
+                    Write-Description Yellow "Appveyor Revsion colision for $NewVersion, Incrementing Revision" -Level 3
+                    $UpdateAppveyorBuildError = $True
+                    [String[]]$NewVersion = $NewVersion.tostring().Split(".")
+                    if ($NewVersion[3]) {$NewVersion[3] = [int]$NewVersion[3] + 1} else {$NewVersion += 0} # Increment Revision by 1
+                    $NewVersion[3] = [math]::max([int]$env:APPVEYOR_BUILD_NUMBER,$NewVersion[3]) # ensure Revision is at least the build count
+                    [Version]$NewVersion = $NewVersion -join '.'
+                } else {
+                    Throw $_
+                }
+            }
+        }
+    } while ($UpdateAppveyorBuildError)
+
+    if ($NewVersion -ne ($Script:Manifest).Version) {
+        Write-Description Magenta 'Updating Manifest version' -Level 2
+        $ModuleManifestFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psd1"
+        Update-ModuleManifest -Path $ModuleManifestFullPath -ModuleVersion $NewVersion
+        $Script:Manifest = Test-ModuleManifest -Path $ModuleManifestFullPath
+    }
+    if ($NewVersion -ne $Script:BuildEnv.ModuleVersion) {
+        Write-Description Magenta 'Updating module version in the build configuration file' -Level 2
+        [String]$Script:BuildEnv.ModuleVersion = $NewVersion
+        Save-BuildData
+    }
+    Write-Description Magenta "Module Version is $NewVersion provided from $NewVersionSource" -Level 2
+    $script:NewVersion = $NewVersion
+    $env:ModuleVersion = $NewVersion
+
+}
+
 # Synopsis: Set a new version of the module
 task NewVersion LoadRequiredModules, LoadModuleManifest, {
     Write-Description White 'Updating module build version' -accent
