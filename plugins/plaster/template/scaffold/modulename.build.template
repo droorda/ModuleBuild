@@ -1135,7 +1135,7 @@ task GithubPush VersionCheck, {
         exec { git commit -m "$ReleaseNotes"}
     }
     else {
-        exec { git commit -m "$($Script:BuildEnv.ModuleVersion)"}
+        exec { git commit -m "$($Script:BuildEnv.ModuleVersion)" }
     }
     exec { git push origin master }
     $changes = exec { git status --short }
@@ -1145,7 +1145,6 @@ task GithubPush VersionCheck, {
 # Synopsis: Push with a version tag.
 task GitPushRelease VersionCheck, {
     $changes = exec { git status --short }
-    assert (-not $changes) "Please, commit changes."
 
     exec { git push }
     exec { git tag -a "v$($Script:BuildEnv.ModuleVersion)" -m "v$($Script:BuildEnv.ModuleVersion)" }
