@@ -1,27 +1,27 @@
 #Requires -Version 5
 [CmdletBinding(DefaultParameterSetName = 'Build')]
 param (
-    [parameter(Position = 0, ParameterSetName = 'Build')]
+    [parameter(ParameterSetName = 'Build')]
     [switch]$BuildModule,
-    [parameter(Position = 1,ParameterSetName = 'Build')]
+    [parameter(ParameterSetName = 'Build')]
     [switch]$TestBuildAndInstallModule,
-    [parameter(Position = 2, ParameterSetName = 'UpdateRelease')]
+    [parameter(ParameterSetName = 'UpdateRelease')]
     [switch]$UpdateRelease,
-    [parameter(Position = 3, ParameterSetName = 'UpdateRelease')]
+    [parameter(ParameterSetName = 'UpdateRelease')]
     [version]$NewVersion,
-    [parameter(Position = 4, ParameterSetName = 'UpdateRelease')]
+    [parameter(ParameterSetName = 'UpdateRelease')]
     [string]$ReleaseNotes,
-    [parameter(Position = 5, ParameterSetName = 'UpdateRelease')]
+    [parameter(ParameterSetName = 'UpdateRelease')]
     [switch]$UploadPSGallery,
-    [parameter(Position = 6, ParameterSetName = 'CBH')]
+    [parameter(ParameterSetName = 'CBH')]
     [switch]$AddMissingCBH,
-    [parameter(Position = 7, ParameterSetName = 'Tests')]
+    [parameter(ParameterSetName = 'Test')]
     [switch]$Test,
-    [parameter(Position = 8,ParameterSetName = 'Tests')]
+    [parameter(ParameterSetName = 'Tests')]
     [switch]$TestMetaOnly,
-    [parameter(Position = 9,ParameterSetName = 'Tests')]
+    [parameter(ParameterSetName = 'Tests')]
     [switch]$TestUnitOnly,
-    [parameter(Position = 10,ParameterSetName = 'Tests')]
+    [parameter(ParameterSetName = 'Tests')]
     [switch]$TestIntergrationOnly
 )
 
