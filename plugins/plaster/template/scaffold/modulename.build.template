@@ -1012,6 +1012,28 @@ task AutoIncreaseVersionBuildLevel -after PublishPSGallery -if {$Script:BuildEnv
 }
 
 # Synopsis: Push to github
+task GithubPushVersionRelease VersionCheck, {
+
+    $changes = exec { git status --short }
+    Write-Description Magenta "Attempting to Push $($changes.count) Git Changes" -accent
+    Write-Description DarkGray $changes
+    exec { git fetch }
+    exec { git add . }
+    if (-not [string]::IsNullOrEmpty($ReleaseNotes)) {
+        exec { git commit -m "$ReleaseNotes"}
+    }
+    else {
+        exec { git commit -m "Build $($Script:BuildEnv.ModuleVersion)"}
+    }
+
+    exec { git tag -a "v$($Script:BuildEnv.ModuleVersion)" -m "v$($Script:BuildEnv.ModuleVersion)" }
+    git push --follow-tags --quiet | Write-host -ForegroundColor Yellow
+
+    $changes = exec { git status --short }
+    assert (-not $changes) "Please, commit changes.`n$changes"
+}
+
+# Synopsis: Push to github
 task GithubPush VersionCheck, {
     exec { git add . }
     if ($ReleaseNotes -ne $null) {
