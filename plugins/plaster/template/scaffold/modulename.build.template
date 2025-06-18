@@ -177,7 +177,7 @@ if ($Script:BuildEnv.OptionTranscriptEnabled) {
 #region Configure
 #Synopsis: Validate system requirements are met
 task ValidateRequirements {
-    Write-Description White 'Validating System Requirements for Build' -accent
+    Write-Description Magenta 'Validating System Requirements for Build' -accent
     assert ($PSVersionTable.PSVersion.Major.ToString() -eq '5') 'Powershell 5 is required for this build to function properly (you can comment this assert out if you are able to work around this requirement)'
 }
 
@@ -187,15 +187,15 @@ task PreBuildTasks {
     $BuildToolPath = Join-Path $BuildRoot $Script:BuildEnv.BuildToolFolder
     $PreBuildPath = Join-Path $BuildToolPath 'startup'
     # Dot source any pre build scripts.
-    Get-ChildItem -Path $PreBuildPath -Recurse -Filter "*.ps1" -File | Foreach {
-        Write-Description White "Dot sourcing pre-build script file: $($_.Name)" -level 2
+    Get-ChildItem -Path $PreBuildPath -Recurse -Filter "*.ps1" -File | ForEach-Object {
+        Write-Description Magenta "Dot sourcing pre-build script file: $($_.Name)" -level 2
         . $_.FullName
     }
 }
 
 # Synopsis: Import the current module manifest file for processing
 task LoadModuleManifest {
-    Write-Description White 'Loading the existing module manifest for this module' -accent
+    Write-Description Magenta 'Loading the existing module manifest for this module' -accent
 
     $ModuleManifestFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psd1"
     assert (test-path $ModuleManifestFullPath) "Unable to locate the module manifest file: $ModuleManifestFullPath"
@@ -204,10 +204,10 @@ task LoadModuleManifest {
 
 #Synopsis: Load required build modules using PSDepend
 task LoadRequiredModules {
-    Write-Description White 'Loading all required modules for the build framework' -accent
+    Write-Description Magenta 'Loading all required modules for the build framework' -accent
 
     if ((Get-Module PSDepend -ListAvailable) -eq $null) {
-        Write-Description White "Installing PSDepend Module" -Level 2
+        Write-Description Magenta "Installing PSDepend Module" -Level 2
         $null = Install-Module PSDepend -Scope:CurrentUser
     }
 
@@ -223,7 +223,7 @@ task LoadRequiredModules {
 
 # Synopsis: Load the module project
 task LoadModule {
-    Write-Description White 'Attempting to load the project module.' -Accent
+    Write-Description Magenta 'Attempting to load the project module.' -Accent
 
     $ModuleFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psm1"
     try {
@@ -236,7 +236,7 @@ task LoadModule {
 
 # Synopsis: Valiates there is no version mismatch.
 task VersionCheck LoadModuleManifest, {
-    Write-Description White 'Validating manifest, build, and gallery module versions.' -accent
+    Write-Description Magenta 'Validating manifest, build, and gallery module versions.' -accent
 
     assert ( ($Script:Manifest).Version.ToString() -eq (($Script:BuildEnv.ModuleVersion)) ) "The module manifest version ( $(($Script:Manifest).Version.ToString()) ) and release version ($($Script:BuildEnv.ModuleVersion)) are mismatched. These must be the same before continuing. Consider running the UpdateRelease task to make the module manifest version the same as the release version."
     Write-Description White 'Manifest version and the release version in the build configuration file are the same.' -Level 2
@@ -254,7 +254,7 @@ task VersionCheck LoadModuleManifest, {
 #Synopsis: Validate script requirements are met, load required modules, load project manifest and module.
 task Configure ValidateRequirements, PreBuildTasks, LoadRequiredModules, LoadModuleManifest, LoadModule, VersionCheck,  {
     # If we made it this far then we are configured!
-    Write-Description White 'Configuring build environment' -accent
+    Write-Description Magenta 'Configuring build environment' -accent
 }
 #endregion
 
@@ -262,13 +262,13 @@ task Configure ValidateRequirements, PreBuildTasks, LoadRequiredModules, LoadMod
 #Synopsis: Create a CodeHealthReport of your existing code
 task CodeHealthReport -if {$Script:BuildEnv.OptionCodeHealthReport} ValidateRequirements, LoadRequiredModules, {
     $BuildReportsFolder = Join-Path $BuildRoot $(Join-Path $Script:BuildEnv.BuildReportsFolder $Script:BuildEnv.ModuleVersion)
-    Write-Description White "Creating a prebuild code health report of your public functions to $($BuildReportsFolder)" -accent
+    Write-Description Magenta "Creating a prebuild code health report of your public functions to $($BuildReportsFolder)" -accent
 
     if (-not (Test-Path $BuildReportsFolder)) {
         [void](New-Item -Path $BuildReportsFolder -ItemType:Directory)
     }
 
-    Write-Description White 'Creating a code health report of your public functions' -level 2
+    Write-Description Magenta 'Creating a code health report of your public functions' -level 2
     $CodeHealthScanPathPublic = Join-Path $BuildRoot $Script:BuildEnv.PublicFunctionSource
     $CodeHealthScanTestPathPublic = $CodeHealthScanPathPublic -replace  'src', 'tests\\unit'
     $CodeHealthReportPublic = Join-Path $BuildReportsFolder 'CodeHealthReport-Public.html'
@@ -278,7 +278,7 @@ task CodeHealthReport -if {$Script:BuildEnv.OptionCodeHealthReport} ValidateRequ
         (Get-Content -Path $CodeHealthReportPublic -raw) -replace [regex]::escape((Resolve-Path $CodeHealthScanPathPublic)), $Script:BuildEnv.PublicFunctionSource | Out-File -FilePath $CodeHealthReportPublic -Encoding $Script:BuildEnv.Encoding -Force
     }
 
-    Write-Description White 'Creating a code health report of your private functions' -level 2
+    Write-Description Magenta 'Creating a code health report of your private functions' -level 2
     $CodeHealthScanPathPrivate = Join-Path $BuildRoot $Script:BuildEnv.PrivateFunctionSource
     $CodeHealthScanTestPathPrivate = $CodeHealthScanPathPrivate -replace  'src', 'tests\\unit'
     $CodeHealthReportPrivate = Join-Path $BuildReportsFolder 'CodeHealthReport-Private.html'
@@ -291,7 +291,7 @@ task CodeHealthReport -if {$Script:BuildEnv.OptionCodeHealthReport} ValidateRequ
 
 # Synopsis: Create base content tree in scratch staging area
 task PrepareStage CleanScratchDirectory, {
-    Write-Description White 'Creating staging folder structure' -accent
+    Write-Description Magenta 'Creating staging folder structure' -accent
 
     $BuildDocsPath = Join-Path $BuildRoot "$($Script:BuildEnv.BuildToolFolder)\docs\"
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
@@ -316,7 +316,7 @@ task PrepareStage CleanScratchDirectory, {
 
 # Synopsis:  Collect a list of our public methods for later module manifest updates
 task GetPublicFunctions {
-    Write-Description White 'Parsing for public (exported) function names' -accent
+    Write-Description Magenta 'Parsing for public (exported) function names' -accent
     $Exported = @()
     Get-ChildItem (Join-Path $BuildRoot $Script:BuildEnv.PublicFunctionSource) -Recurse -Filter "*.ps1" -File | Sort-Object Name | ForEach-Object {
         $Exported += ([System.Management.Automation.Language.Parser]::ParseInput((Get-Content -Path $_.FullName -Raw), [ref]$null, [ref]$null)).FindAll( { $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false) | ForEach-Object {$_.Name}
@@ -326,20 +326,20 @@ task GetPublicFunctions {
         Write-Error 'There are no public functions to export!'
     }
     $Script:FunctionsToExport = $Exported
-    Write-Description White "Number of exported functions found = $($Exported.Count)" -Level 2
+    Write-Description Magenta "Number of exported functions found = $($Exported.Count)" -Level 2
 }
 
 # Synopsis: Validate that sensitive strings are not found in your code
 task SanitizeCode -if {$Script:BuildEnv.OptionSanitizeSensitiveTerms} {
-    Write-Description White 'Attempting to find sensitive terms in the code' -accent
+    Write-Description Magenta 'Attempting to find sensitive terms in the code' -accent
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
     $StageReleasePath = Join-Path $ScratchPath $Script:BuildEnv.BaseReleaseFolder
 
     ForEach ($Term in $Script:BuildEnv.OptionSensitiveTerms) {
-        Write-Description White "Checking Files for sensitive string: $Term" -level 2
+        Write-Description Magenta "Checking Files for sensitive string: $Term" -level 2
         $TermsFound = Get-ChildItem -Path $ScratchPath -Recurse -File | Where-Object {$_.FullName -notlike "$($StageReleasePath)*"} | Select-String -Pattern $Term
         if ($TermsFound.Count -gt 0) {
-            Write-Description white "Sensitive string found in the following files:" -Level 3
+            Write-Description Magenta "Sensitive string found in the following files:" -Level 3
             $TermsFound | ForEach-Object {
                 Write-Description yellow $_ -level 4
             }
@@ -350,22 +350,22 @@ task SanitizeCode -if {$Script:BuildEnv.OptionSanitizeSensitiveTerms} {
 
 # Synopsis: Removes script signatures before creating a combined PSM1 file
 task RemoveScriptSignatures {
-    Write-Description White 'Removing any script signatures for function files (if they exist)' -Accent
+    Write-Description Magenta 'Removing any script signatures for function files (if they exist)' -Accent
 
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
 
     if ($Script:BuildEnv.OptionCombineFiles) {
-        Write-Description White 'Remove script signatures from all files' -Level 2
+        Write-Description Magenta 'Remove script signatures from all files' -Level 2
         Get-ChildItem -Path "$($ScratchPath)\$($Script:BuildEnv.BaseSourceFolder)" -Recurse -File | ForEach-Object {Remove-MBTSignature -FilePath $_.FullName}
     }
 }
 
 # Synopsis: Run PSScriptAnalyzer against the public source files.
 task RunPSScriptAnalyzeOnPublicSrcFunctions {
-    Write-Description White "Analyzing the public source files with ScriptAnalyzer." -accent
+    Write-Description Magenta "Analyzing the public source files with ScriptAnalyzer." -accent
     $Analysis = Invoke-ScriptAnalyzer -Path (Join-Path $BuildRoot $Script:BuildEnv.PublicFunctionSource) -Settings (Join-Path $BuildRoot "PSScriptAnalyzerSettings.psd1")
     if ($Analysis.Count) {
-        Write-Description White "Note that this was from the script analysis run against $($Script:BuildEnv.PublicFunctionSource)" -level 2
+        Write-Description Magenta "Note that this was from the script analysis run against $($Script:BuildEnv.PublicFunctionSource)" -level 2
         Write-Description Red "$($Analysis.Count) linting errors or warnings were found:" -level 2
         $Analysis | Format-Table -AutoSize
     }
@@ -374,7 +374,7 @@ task RunPSScriptAnalyzeOnPublicSrcFunctions {
 
 #region Tests
 task RunMetaTests LoadRequiredModules, {
-    Write-Description White 'Running meta tests with Pester' -accent
+    Write-Description Magenta 'Running meta tests with Pester' -accent
     $ENV:BuildRoot = $BuildRoot
     $invokePesterParams = @{
         Strict = $true
@@ -388,7 +388,7 @@ task RunMetaTests LoadRequiredModules, {
 }
 
 task RunUnitTests LoadRequiredModules, {
-    Write-Description White 'Running Unit tests with Pester' -accent
+    Write-Description Magenta 'Running Unit tests with Pester' -accent
     $ENV:BuildRoot = $BuildRoot
     $invokePesterParams = @{
         Strict = $true
@@ -402,7 +402,7 @@ task RunUnitTests LoadRequiredModules, {
 }
 
 task RunIntergrationTests LoadRequiredModules, {
-    Write-Description White 'Running Intergration tests with Pester' -accent
+    Write-Description Magenta 'Running Intergration tests with Pester' -accent
     $ENV:BuildRoot = $BuildRoot
     $invokePesterParams = @{
         Strict = $true
@@ -419,7 +419,7 @@ task RunIntergrationTests LoadRequiredModules, {
 #region Documentation/Help files
 # Synopsis: Build the markdown help files with PlatyPS
 task CreateMarkdownHelp GetPublicFunctions, {
-    Write-Description White 'Creating markdown documentation with PlatyPS' -accent
+    Write-Description Magenta 'Creating markdown documentation with PlatyPS' -accent
 
     $BuildToolPath = Join-Path $BuildRoot $Script:BuildEnv.BuildToolFolder
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
@@ -489,7 +489,7 @@ task CreateMarkdownHelp GetPublicFunctions, {
 
 # Synopsis: Build the markdown help files with PlatyPS
 task CreateExternalHelp {
-    Write-Description White 'Creating markdown help files' -accent
+    Write-Description Magenta 'Creating markdown help files' -accent
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
     $StageReleasePath = Join-Path $ScratchPath $Script:BuildEnv.BaseReleaseFolder
 
@@ -502,7 +502,7 @@ task CreateExternalHelp {
 
 # Synopsis: Build the help file CAB with PlatyPS
 task CreateUpdateableHelpCAB {
-    Write-Description White "Creating updateable help cab file" -accent
+    Write-Description Magenta "Creating updateable help cab file" -accent
 
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
     $StageReleasePath = Join-Path $ScratchPath $Script:BuildEnv.BaseReleaseFolder
@@ -517,7 +517,7 @@ task CreateUpdateableHelpCAB {
 
 # Synopsis: Build the markdown help for the functions using PlatyPS for the core project docs.
 task BuildProjectHelpFiles {
-    Write-Description White 'Creating markdown documentation with PlatyPS for the core project' -accent
+    Write-Description Magenta 'Creating markdown documentation with PlatyPS for the core project' -accent
     $BuildToolPath = Join-Path $BuildRoot $Script:BuildEnv.BuildToolFolder
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
 
@@ -558,7 +558,7 @@ task BuildProjectHelpFiles {
 
 # Synopsis: Add additional doc files to the final project document folder
 task AddAdditionalDocFiles {
-    Write-Description White "Add additional doc files to the project document folder" -accent
+    Write-Description Magenta "Add additional doc files to the project document folder" -accent
 
     $BuildDocsPath = Join-Path $BuildRoot "$($Script:BuildEnv.BuildToolFolder)\docs\"
     Copy-Item -Path (Join-Path $BuildDocsPath 'Additional\*.md') -Destination (Join-Path $BuildRoot 'docs') -Force
@@ -566,7 +566,7 @@ task AddAdditionalDocFiles {
 
 # Synopsis: Update ReadTheDocs project documentation
 task UpdateReadTheDocs -if {$Script:BuildEnv.OptionGenerateReadTheDocs} {
-    Write-Description White 'Copy ReadTheDocs markdown files to project root document folder' -accent
+    Write-Description Magenta 'Copy ReadTheDocs markdown files to project root document folder' -accent
 
     $BuildDocsPath = Join-Path $BuildRoot "$($Script:BuildEnv.BuildToolFolder)\docs\"
     $ProjectDocsPath = Join-Path $BuildRoot 'docs'
@@ -583,7 +583,7 @@ task UpdateReadTheDocs -if {$Script:BuildEnv.OptionGenerateReadTheDocs} {
 
 # Synopsis: Build ReadTheDocs yml file
 task CreateReadTheDocsYML -if {$Script:BuildEnv.OptionGenerateReadTheDocs} Configure, {
-    Write-Description White 'Create ReadTheDocs definition file and saving to the root project site.' -accent
+    Write-Description Magenta 'Create ReadTheDocs definition file and saving to the root project site.' -accent
 
     $DocsReleasePath = Join-Path $Script:BuildEnv.BaseReleaseFolder $Script:BuildEnv.ModuleToBuild
     $ProjectDocsPath = Join-Path $BuildRoot 'docs'
@@ -633,7 +633,7 @@ task CreateReadTheDocsYML -if {$Script:BuildEnv.OptionGenerateReadTheDocs} Confi
 
 # Synopsis: Replace comment based help with external help in all public functions for this project
 task UpdateCBH {
-    Write-Description White 'Updating Comment Based Help in functions to point to external help links' -accent
+    Write-Description Magenta 'Updating Comment Based Help in functions to point to external help links' -accent
 
     $ExternalHelp = @"
 <#
@@ -648,7 +648,7 @@ task UpdateCBH {
     Get-ChildItem -Path "$($ScratchPath)\$($Script:BuildEnv.PublicFunctionSource)\*.ps1" -File | ForEach-Object {
         $FormattedOutFile = $_.FullName
         $FileName = $_.Name
-        Write-Description White "Replacing CBH in file: $($FileName)" -level 2
+        Write-Description Magenta "Replacing CBH in file: $($FileName)" -level 2
         $FunctionName = $FileName -replace '.ps1', ''
         $NewExternalHelp = $ExternalHelp -replace '{{LINK}}', ($Script:BuildEnv.ModuleWebsite + "/tree/master/$($Script:BuildEnv.BaseReleaseFolder)/$($Script:BuildEnv.ModuleVersion)/docs/$($FunctionName).md")
         $UpdatedFile = (get-content  $FormattedOutFile -raw) -replace $CBHPattern, $NewExternalHelp
@@ -658,7 +658,7 @@ task UpdateCBH {
 
 # Synopsis: Update public functions to include a template comment based help.
 task InsertCBHInPublicFunctions {
-    Write-Description White "Attempting to insert comment based help into functions" -accent
+    Write-Description Magenta "Attempting to insert comment based help into functions" -accent
 
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
     $CBHPattern = "(?ms)(^\s*\<`#.*\.SYNOPSIS.*?`#>)"
@@ -670,7 +670,7 @@ task InsertCBHInPublicFunctions {
     Get-ChildItem (Join-Path $BuildRoot $Script:BuildEnv.PublicFunctionSource) -Filter *.ps1 | ForEach-Object {
         $FileName = $_.Name
         $FullFilePath = $_.FullName
-        Write-Description White "Public function - $($FileName)" -level 2
+        Write-Description Magenta "Public function - $($FileName)" -level 2
         $currscript = Get-Content $FullFilePath -Raw
         $CBH = $currscript | New-MBTCommentBasedHelp
         $currscriptblock = [scriptblock]::Create($currscript)
@@ -682,7 +682,7 @@ task InsertCBHInPublicFunctions {
             $currfunct = get-command $CBH.FunctionName
             if ($currfunct.definition -notmatch $CBHPattern) {
                 $CBHUpdates++
-                Write-Description White "Inserting template CBH and writing to : $($Script:BuildEnv.ScratchFolder)\$($Script:BuildEnv.PublicFunctionSource)\$($FileName)" -Level 3
+                Write-Description Magenta "Inserting template CBH and writing to : $($Script:BuildEnv.ScratchFolder)\$($Script:BuildEnv.PublicFunctionSource)\$($FileName)" -Level 3
                 $UpdatedFunct = 'Function ' + $currfunct.Name + ' {' + "`r`n" + $CBH.CBH + "`r`n" + $currfunct.definition + "`r`n" + '}'
                 $UpdatedFunct | Out-File "$($ScratchPath)\$($Script:BuildEnv.PublicFunctionSource)\$($FileName)" -Encoding $Script:BuildEnv.Encoding -force
             }
@@ -715,41 +715,41 @@ task CreateHelp CreateMarkdownHelp, CreateExternalHelp, CreateUpdateableHelpCAB,
 #region Prepair module release
 # Synopsis: Assemble the module for release
 task CreateModulePSM1 RemoveScriptSignatures, UpdateCBH, {
-    Write-Description White "Assembling module psm1 file" -Accent
+    Write-Description Magenta "Assembling module psm1 file" -Accent
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
     $StageReleasePath = Join-Path $ScratchPath $Script:BuildEnv.BaseReleaseFolder
     $ReleaseModule = "$($StageReleasePath)\$($Script:BuildEnv.ModuleToBuild).psm1"
 
     if ($Script:BuildEnv.OptionCombineFiles) {
-        Write-Description White "Option to combine PSM1 is enabled, combining source files now..." -Level 2
+        Write-Description Magenta "Option to combine PSM1 is enabled, combining source files now..." -Level 2
 
         $CombineFiles = ''
         $PreloadFilePath = (Join-Path $ScratchPath "$($Script:BuildEnv.OtherModuleSource)\PreLoad.ps1")
         if (Test-Path $PreloadFilePath) {
-            Write-Description White 'Starting with Preload.ps1' -Level 3
+            Write-Description Magenta 'Starting with Preload.ps1' -Level 3
             $CombineFiles += "## Pre-Loaded Module code ##`r`n`r`n"
             Get-childitem $PreloadFilePath | ForEach-Object {
                 $CombineFiles += (Get-content $_ -Raw) + "`r`n`r`n"
             }
         }
-        Write-Description White 'Adding the private source files:' -Level 3
+        Write-Description Magenta 'Adding the private source files:' -Level 3
 
         $CombineFiles += "## PRIVATE MODULE FUNCTIONS AND DATA ##`r`n`r`n"
 
         Get-childitem  (Join-Path $ScratchPath "$($Script:BuildEnv.PrivateFunctionSource)\*.ps1") | ForEach-Object {
-            Write-Description White $_.Name -Level 4
+            Write-Description Magenta $_.Name -Level 4
             $CombineFiles += (Get-content $_ -Raw) + "`r`n`r`n"
         }
 
-        Write-Description White 'Adding the public source files:' -Level 3
+        Write-Description Magenta 'Adding the public source files:' -Level 3
 
         $CombineFiles += "## PUBLIC MODULE FUNCTIONS AND DATA ##`r`n`r`n"
         Get-childitem  (Join-Path $ScratchPath "$($Script:BuildEnv.PublicFunctionSource)\*.ps1") | ForEach-Object {
-            Write-Description White $_.Name -Level 4
+            Write-Description Magenta $_.Name -Level 4
             $CombineFiles += (Get-content $_ -Raw) + "`r`n`r`n"
         }
 
-        Write-Description White 'Finishing with Postload.ps1' -Level 3
+        Write-Description Magenta 'Finishing with Postload.ps1' -Level 3
         $CombineFiles += "## Post-Load Module code ##`r`n`r`n"
         $PostLoadPath = (Join-Path $ScratchPath "$($Script:BuildEnv.OtherModuleSource)\PostLoad.ps1")
         if (Test-Path $PostLoadPath) {
@@ -761,7 +761,7 @@ task CreateModulePSM1 RemoveScriptSignatures, UpdateCBH, {
         Set-Content -Path $ReleaseModule -Value $CombineFiles -Encoding $Script:BuildEnv.Encoding
     }
     else {
-        Write-Description White 'Option to combine PSM1 is NOT enabled, copying over file structure now...' -Level 2
+        Write-Description Magenta 'Option to combine PSM1 is NOT enabled, copying over file structure now...' -Level 2
         Copy-Item -Path (Join-Path $ScratchPath $Script:BuildEnv.OtherModuleSource) -Recurse -Destination $StageReleasePath -Force
         Copy-Item -Path (Join-Path $ScratchPath $Script:BuildEnv.PrivateFunctionSource) -Recurse -Destination $StageReleasePath -Force
         Copy-Item -Path (Join-Path $ScratchPath $Script:BuildEnv.PublicFunctionSource) -Recurse -Destination $StageReleasePath -Force
@@ -769,10 +769,10 @@ task CreateModulePSM1 RemoveScriptSignatures, UpdateCBH, {
     }
 
     if (($Script:BuildEnv.AdditionalModulePaths).Count -gt 0) {
-        Write-Description White 'Copying over additional module paths now (if they exist).' -Level 2
+        Write-Description Magenta 'Copying over additional module paths now (if they exist).' -Level 2
         $Script:BuildEnv.AdditionalModulePaths | ForEach-Object {
             if (Test-Path $_) {
-                Write-Description White "Copying $_" -Level 3
+                Write-Description Magenta "Copying $_" -Level 3
                 Copy-Item -Path $_ -Recurse -Destination $StageReleasePath -Force
             }
         }
@@ -780,23 +780,23 @@ task CreateModulePSM1 RemoveScriptSignatures, UpdateCBH, {
 }
 # Synopsis: Create new module manifest with explicit function exports included
 task CreateModuleManifest CreateModulePSM1, {
-    Write-Description White 'Module manifest file updates' -accent
+    Write-Description Magenta 'Module manifest file updates' -accent
     $ModuleManifestFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psd1"
     $StageReleasePath = Join-Path (Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder) $Script:BuildEnv.BaseReleaseFolder
 
     $PSD1OutputFile = Join-Path $StageReleasePath "$($Script:BuildEnv.ModuleToBuild).psd1"
     $ThisPSD1OutputFile = "$BuildRoot\$($Script:BuildEnv.ScratchFolder)\$($Script:BuildEnv.BaseReleaseFolder)\$($Script:BuildEnv.ModuleToBuild).psd1"
-    Write-Description White "Attempting to update the release module manifest file:  $ThisPSD1OutputFile" -Level 2
+    Write-Description Magenta "Attempting to update the release module manifest file:  $ThisPSD1OutputFile" -Level 2
     $null = Copy-Item -Path $ModuleManifestFullPath -Destination $PSD1OutputFile -Force
     Update-ModuleManifest -Path $PSD1OutputFile -FunctionsToExport $Script:FunctionsToExport
 }
 # Synopsis: Run PSScriptAnalyzer against the assembled module
 task AnalyzeModuleRelease -if {$Script:BuildEnv.OptionAnalyzeCode} {
-    Write-Description White 'Analyzing the project with ScriptAnalyzer' -accent
+    Write-Description Magenta 'Analyzing the project with ScriptAnalyzer' -accent
     $StageReleasePath = Join-Path (Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder) $Script:BuildEnv.BaseReleaseFolder
     $Analysis = Invoke-ScriptAnalyzer -Path $StageReleasePath -Settings (Join-Path $BuildRoot "PSScriptAnalyzerSettings.psd1")
     if ($Analysis.Count) {
-        Write-Description White "Note that this was from the script analysis run against $StageReleasePath" -level 2
+        Write-Description Magenta "Note that this was from the script analysis run against $StageReleasePath" -level 2
         Write-Description Red "$($Analysis.Count) linting errors or warnings were found:" -level 2
         $Analysis | Format-Table -AutoSize
         Write-Error "$($Analysis.Count) linting errors or warnings were found. The build cannot continue." -ErrorAction Stop
@@ -804,7 +804,7 @@ task AnalyzeModuleRelease -if {$Script:BuildEnv.OptionAnalyzeCode} {
 }
 # Synopsis: Create a new version release directory for our release and copy our contents to it
 task PushVersionRelease {
-    Write-Description White "Attempting to push a version release of the module" -accent
+    Write-Description Magenta "Attempting to push a version release of the module" -accent
 
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
     $ThisReleasePath = Join-Path $ReleasePath $Script:BuildEnv.ModuleVersion
@@ -818,7 +818,7 @@ task PushVersionRelease {
 }
 # Synopsis: Create the current release directory and copy this build to it.
 task PushCurrentRelease {
-    Write-Description White "Attempting to push a current release of the module" -accent
+    Write-Description Magenta "Attempting to push a current release of the module" -accent
 
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
     $CurrentReleasePath = Join-Path $ReleasePath $Script:BuildEnv.ModuleToBuild
@@ -833,7 +833,7 @@ task PushCurrentRelease {
         }
     }
     if ($ProcessCurrentRelease -or $Force -or $Script:BuildEnv.Force) {
-        Write-Description White "Pushing a version release to $($ThisBuildCurrentReleasePath)" -level 2
+        Write-Description Magenta "Pushing a version release to $($ThisBuildCurrentReleasePath)" -level 2
         $null = Remove-Item $CurrentReleasePath -Force -Recurse -ErrorAction 0
         $null = New-Item $CurrentReleasePath -ItemType:Directory -Force
         Copy-Item -Path "$($StageReleasePath)\*" -Destination $CurrentReleasePath -Recurse -force
@@ -848,26 +848,26 @@ task PushCurrentRelease {
 #region Postbuild PSGallery and Version management
 # Synopsis: Run post-build scripts (such as file transformations or deployments)
 task PostBuildTasks {
-    Write-Description White 'Running any Post-Build scripts' -accent
+    Write-Description Magenta 'Running any Post-Build scripts' -accent
     $BuildToolPath = Join-Path $BuildRoot $Script:BuildEnv.BuildToolFolder
     $CleanupPath = Join-Path $BuildToolPath 'shutdown'
     # Dot source any post build cleanup scripts.
-    Get-ChildItem -Path $CleanupPath -Recurse -Filter "*.ps1" -File | Foreach {
-        Write-Description White "Dot sourcing shutdown script file: $($_.Name)" -Level 3
+    Get-ChildItem -Path $CleanupPath -Recurse -Filter "*.ps1" -File | ForEach-Object {
+        Write-Description Magenta "Dot sourcing shutdown script file: $($_.Name)" -Level 3
         . $_.FullName
     }
 }
 
 # Synopsis: Install the current built module to the local machine
 task InstallModule VersionCheck, {
-    Write-Description White "Attempting to install the current module" -accent
+    Write-Description Magenta "Attempting to install the current module" -accent
     $CurrentModulePath = Join-Path $Script:BuildEnv.BaseReleaseFolder $Script:BuildEnv.ModuleVersion
     assert (Test-Path $CurrentModulePath) 'The current version module has not been built yet!'
 
     $MyModulePath = "$((Get-MBTSpecialPath)['MyDocuments'])\WindowsPowerShell\Modules\"
     $ModuleInstallPath = "$($MyModulePath)$($Script:BuildEnv.ModuleToBuild)"
     if (Test-Path $ModuleInstallPath) {
-        Write-Description White "Removing installed module $($Script:BuildEnv.ModuleToBuild)" -Level 2
+        Write-Description Magenta "Removing installed module $($Script:BuildEnv.ModuleToBuild)" -Level 2
         if ($Force -or $Script:BuildEnv.ForceInstallModule) {
             Remove-Item -Path $ModuleInstallPath -Force -Recurse
         }
@@ -877,15 +877,15 @@ task InstallModule VersionCheck, {
         assert (-not (Test-Path $ModuleInstallPath)) 'Module already installed and you opted not to remove it. Cancelling install operation!'
     }
 
-    Write-Description White "Installing current module:" -Level 2
-    Write-Description White "Source - $($CurrentModulePath)" -Level 3
-    Write-Description White "Destination - $($ModuleInstallPath)" -Level 3
+    Write-Description Magenta "Installing current module:" -Level 2
+    Write-Description Magenta "Source - $($CurrentModulePath)" -Level 3
+    Write-Description Magenta "Destination - $($ModuleInstallPath)" -Level 3
     Copy-Item -Path $CurrentModulePath -Destination $ModuleInstallPath -Recurse
 }
 
 # Synopsis: Test import the current module
 task TestImportInstalledModule VersionCheck, {
-    Write-Description White "Test importing the current module version $($Script:BuildEnv.ModuleVersion)" -accent
+    Write-Description Magenta "Test importing the current module version $($Script:BuildEnv.ModuleVersion)" -accent
 
     $InstalledModules = @(Get-Module -ListAvailable $Script:BuildEnv.ModuleToBuild)
     assert ($InstalledModules.Count -gt 0) 'Unable to find that the module is installed!'
@@ -902,7 +902,7 @@ task PublishPSGallery LoadRequiredModules, InstallModule, {
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
     $CurrentReleasePath = Join-Path $ReleasePath $Script:BuildEnv.ModuleToBuild
     if (Get-Module $Script:BuildEnv.ModuleToBuild) {
-        Write-Description White "This module is already installed $($Script:BuildEnv.ModuleToBuild). Removing it" -Level 2
+        Write-Description Magenta "This module is already installed $($Script:BuildEnv.ModuleToBuild). Removing it" -Level 2
         Write-Verbose "$($(Get-Module $Script:BuildEnv.ModuleToBuild).Path)"
         Get-Module $Script:BuildEnv.ModuleToBuild | ForEach-Object {
             Remove-Module $_.Name
@@ -914,8 +914,8 @@ task PublishPSGallery LoadRequiredModules, InstallModule, {
     if (Test-Path $CurrentModule) {
         Import-Module -Name $CurrentModule
 
-        Write-Description White "Uploading project to PSGallery: $($Script:BuildEnv.ModuleToBuild)"
         Publish-MBTProjectToPSGallery -Name $Script:BuildEnv.ModuleToBuild -NuGetApiKey $Script:BuildEnv.NuGetApiKey -RequiredVersion $Script:BuildEnv.ModuleVersion
+        Write-Description Magenta "Uploading project to PSGallery: $($Script:BuildEnv.ModuleToBuild)"
     }
 
     else {
@@ -1018,7 +1018,7 @@ task DetectNewVersion LoadRequiredModules, LoadModuleManifest, {
 
 # Synopsis: Set a new version of the module
 task NewVersion LoadRequiredModules, LoadModuleManifest, {
-    Write-Description White 'Updating module build version' -accent
+    Write-Description Magenta 'Updating module build version' -accent
     $ModuleManifestFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psd1"
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
     $AllReleases = @((Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -match '^([0-9].[0-9].[0-9])$'} | Select-Object).Name | ForEach-Object {[version]$_})
@@ -1040,10 +1040,10 @@ task NewVersion LoadRequiredModules, LoadModuleManifest, {
 
     $Script:BuildEnv.ModuleVersion = $NewVersion.ToString()
 
-    Write-Description White 'Saving persistent build file with new module version' -level 2
+    Write-Description Magenta 'Saving persistent build file with new module version' -level 2
     Save-BuildData
 
-    Write-Description White 'Updating module manifest with new module version' -level 2
+    Write-Description Magenta 'Updating module manifest with new module version' -level 2
     try {
         Update-ModuleManifest -Path $ModuleManifestFullPath -ModuleVersion $NewVersion
     }
@@ -1054,7 +1054,7 @@ task NewVersion LoadRequiredModules, LoadModuleManifest, {
 
 # Synopsis: Update current module manifest with the version defined in the build config file (if they differ)
 task UpdateRelease NewVersion, LoadRequiredModules, LoadModuleManifest, {
-    Write-Description White 'Updating the release notes of this module' -accent
+    Write-Description Magenta 'Updating the release notes of this module' -accent
 
     $ModuleManifestFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psd1"
     # If there is a version mismatch then we need to put in some release notes and update the module manifest
@@ -1077,7 +1077,7 @@ task UpdateRelease NewVersion, LoadRequiredModules, LoadModuleManifest, {
 
 # Synopsis: Update the current build patch version
 task AutoIncreaseVersionBuildLevel -after PublishPSGallery -if {$Script:BuildEnv.OptionUpdateVersionAfterPublishing} {
-    Write-Description White 'Attempting to update the module build version' -accent
+    Write-Description Magenta 'Attempting to update the module build version' -accent
 
     $ModuleManifestFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psd1"
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
@@ -1088,12 +1088,12 @@ task AutoIncreaseVersionBuildLevel -after PublishPSGallery -if {$Script:BuildEnv
 
     $Script:BuildEnv.ModuleVersion = $ProposedNewRelease.ToString()
 
-    Write-Description White 'Saving persistent build file with new module version' -level 2
+    Write-Description Magenta 'Saving persistent build file with new module version' -level 2
     Save-BuildData
 
     $NewReleaseNotes = "$($ProposedNewRelease.ToString()) release"
 
-    Write-Description White 'Updating module manifest with new module version' -level 2
+    Write-Description Magenta 'Updating module manifest with new module version' -level 2
     try {
         Update-ModuleManifest -Path $ModuleManifestFullPath -ModuleVersion $ProposedNewRelease -ReleaseNotes $NewReleaseNotes
     }
@@ -1154,7 +1154,7 @@ task GitPushRelease VersionCheck, {
 #region Cleanup
 # Synopsis: Regenerate scratch staging directory
 task CleanScratchDirectory {
-    Write-Description White "Clean up our scratch/staging directory $($Script:BuildEnv.ScratchFolder)" -accent
+    Write-Description Magenta "Clean up our scratch/staging directory $($Script:BuildEnv.ScratchFolder)" -accent
 
     $ScratchPath = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
     $null = Remove-Item $ScratchPath -Force -Recurse -ErrorAction 0
@@ -1163,13 +1163,13 @@ task CleanScratchDirectory {
 
 # Synopsis: Remove session artifacts like loaded modules and variables
 task BuildSessionCleanup CleanScratchDirectory, {
-    Write-Description White 'Cleaning up the build session' -accent
+    Write-Description Magenta 'Cleaning up the build session' -accent
 
-    Write-Description White "Removing $($Script:BuildEnv.ModuleToBuild) module (if loaded)." -Level 3
+    Write-Description Magenta "Removing $($Script:BuildEnv.ModuleToBuild) module (if loaded)." -Level 3
     Remove-Module $Script:BuildEnv.ModuleToBuild -Erroraction Ignore
 
     $Script:PSDependBuildModules | Foreach-Object {
-        Write-Description White "Removing $($_.DependencyName) module (if loaded)." -Level 3
+        Write-Description Magenta "Removing $($_.DependencyName) module (if loaded)." -Level 3
         Remove-Module $_ -Erroraction Ignore -Force
     }
 
