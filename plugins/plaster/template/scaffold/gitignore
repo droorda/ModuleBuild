@@ -21,6 +21,12 @@ psgalleryapi.txt
 *~
 *.pfx
 
+#docs created as part of the build
+mkdocs.yml
+docs/Functions/*.md
+plugins/*/*/*
+release/*
+
 #############
 ## Windows detritus
 #############
