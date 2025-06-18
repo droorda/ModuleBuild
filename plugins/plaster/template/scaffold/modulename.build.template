@@ -248,8 +248,8 @@ task VersionCheck LoadModuleManifest, {
     Write-Description White 'Manifest version and the release version in the build configuration file are the same.' -Level 2
     $GalleryVersion = Find-Module -Name ($Script:BuildEnv.ModuleToBuild) -Repository $Script:BuildEnv.NugetRepository -ErrorAction:SilentlyContinue
     if ($null -ne $GalleryVersion) {
-        if ($GalleryVersion.Version -gt [version]($Script:BuildEnv.ModuleVersion)) {
-            throw "The current module version is less than or equal to the one published in powershell gallary. You should bump up your module version to be at least greater than $($GalleryVersion.Version.ToString()) before building this module."
+        if ([version]$GalleryVersion.Version -gt [version]($Script:BuildEnv.ModuleVersion)) {
+            throw "The current module version $($Script:BuildEnv.ModuleVersion) is less than or equal to $($GalleryVersion.Version) published in $($Script:BuildEnv.NugetRepository) Repository. You should bump up your module version to be at least greater than $($GalleryVersion.Version.ToString()) before building this module."
         }
     }
     else {
