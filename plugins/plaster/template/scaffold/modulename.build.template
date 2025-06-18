@@ -234,7 +234,7 @@ task LoadModule {
     }
 }
 
-# Synopsis: Valiates there is no version mismatch.
+# Synopsis: Validates there is no version mismatch.
 task VersionCheck LoadModuleManifest, {
     Write-Description Magenta 'Validating manifest, build, and gallery module versions.' -accent
 
