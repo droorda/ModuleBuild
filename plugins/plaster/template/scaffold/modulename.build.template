@@ -828,7 +828,7 @@ task PushCurrentRelease {
     $ThisBuildCurrentReleasePath = ".\$($Script:BuildEnv.BaseReleaseFolder)\$($Script:BuildEnv.ModuleToBuild)"
     $StageReleasePath = Join-Path (Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder) $Script:BuildEnv.BaseReleaseFolder
 
-    $MostRecentRelease = (Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -like "*.*.*"} | Select-Object Name).name | ForEach-Object {[version]$_} | Sort-Object -Descending | Select-Object -First 1
+    $MostRecentRelease = Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -match '^([0-9]+(?:\.[0-9]+)+)$'} | ForEach-Object {[version]$_.Name} | Sort-Object -Descending | Select-Object -First 1
     $ProcessCurrentRelease = $true
     if ($MostRecentRelease) {
         if ($MostRecentRelease -gt [version]$Script:BuildEnv.ModuleVersion) {
@@ -1031,8 +1031,9 @@ task NewVersion LoadRequiredModules, LoadModuleManifest, {
     Write-Description Magenta 'Updating module build version' -accent
     $ModuleManifestFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psd1"
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
-    $AllReleases = @((Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -match '^([0-9].[0-9].[0-9])$'} | Select-Object).Name | ForEach-Object {[version]$_})
-
+    if (Test-path -Path $ReleasePath) {
+        $AllReleases = @(Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -match '^([0-9]+(?:\.[0-9]+)+)$'} | ForEach-Object {[version]$_.Name})
+    }
     # if a new version wasn't passed as a parameter then prompt for one
     if ($null -eq $NewVersion) {
         do {
@@ -1091,10 +1092,12 @@ task AutoIncreaseVersionBuildLevel -after PublishPSGallery -if {$Script:BuildEnv
 
     $ModuleManifestFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psd1"
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
-    $AllReleases = @((Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -match '^([0-9].[0-9].[0-9])$'} | Select-Object).Name | ForEach-Object {[version]$_})
-
+    $AllReleases =  @(Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -match '^([0-9]+(?:\.[0-9]+)+)$'} | ForEach-Object {[version]$_.Name})
     $NewestRelease = $AllReleases | Sort-Object -Descending | Select-Object -First 1
-    $ProposedNewRelease = [version]("$($NewestRelease.Major).$($NewestRelease.Minor).$($NewestRelease.Build + 1)")
+    $ProposedNewRelease = "$($NewestRelease.Major).$($NewestRelease.Minor)"
+    if ($NewestRelease.Build) {$ProposedNewRelease += ".$($NewestRelease.Build + 1)"} else {$ProposedNewRelease += '.0'}
+    if ($NewestRelease.Revision) {$ProposedNewRelease += ".$($NewestRelease.Revision + 1)"}
+    $ProposedNewRelease = [version]$ProposedNewRelease
 
     $Script:BuildEnv.ModuleVersion = $ProposedNewRelease.ToString()
 
