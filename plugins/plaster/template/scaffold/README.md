@@ -1,5 +1,8 @@
 # <%=$PLASTER_PARAM_ModuleName%>
 
+<!-- [![Build status](https://ci.appveyor.com/api/projects/status/1234567890?svg=true)](https://ci.appveyor.com/project/Account/Module) -->
+<!-- ![Build status](https://img.shields.io/github/actions/workflow/status/Org/Module/ModuleReports.yml?branch=master) -->
+
 <%=$PLASTER_PARAM_ModuleDescription%>
 
 ## Description
