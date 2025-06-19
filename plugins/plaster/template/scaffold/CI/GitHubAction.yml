@@ -18,22 +18,14 @@ on:
 
 env:
   NugetRepository: "${{ vars.NUGETREPOSITORY }}"
-  NugetRepositorySourceLocation: "https://nuget.dev.iconic-it.com/nuget"
-  NugetRepositoryPublishLocation: "https://nuget.dev.iconic-it.com/nuget"
-  NugetRepositoryScriptSourceLocation: "https://nuget.dev.iconic-it.com/nuget"
-  NugetRepositoryScriptPublishLocation: "https://nuget.dev.iconic-it.com/nuget"
+  NugetRepositorySourceLocation: "${{ vars.NUGETREPOSITORYSOURCELOCATION }}"
+  NugetRepositoryPublishLocation: "${{ vars.NUGETREPOSITORYPUBLISHLOCATION }}"
+  NugetRepositoryScriptSourceLocation: "${{ vars.NUGETREPOSITORYSCRIPTSOURCELOCATION }}"
+  NugetRepositoryScriptPublishLocation: "${{ vars.NUGETREPOSITORYSCRIPTPUBLISHLOCATION }}"
   NugetAPIKey: ${{ secrets.NUGETAPIKEY }}
   GithubPAT: ${{ secrets.GITHUBPAT }}
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
-
-# validate
-# compile
-# test
-# package
-# verify
-# install
-# deploy
 
 jobs:
 
