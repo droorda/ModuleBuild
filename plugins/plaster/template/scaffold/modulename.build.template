@@ -4,10 +4,275 @@
     [parameter()]
     [version]$NewVersion = $null,
     [parameter()]
+    [string]$ReleaseType, # 'alpha', 'beta', 'rc'
+    [parameter()]
     [string]$ReleaseNotes,
     [parameter()]
     [switch]$Force
 )
+
+class SemanticVersion : IComparable {
+    [int]$Major = 0
+    [int]$Minor = 0
+    [int]$Patch = 0
+    [int]$Revision = -1
+    [string]$PrereleaseLabel = ""
+    [string]$BuildLabel = ""
+    [int]$PreReleaseNumber = 0
+
+    SemanticVersion([string]$versionString = "0.0.0") {
+        $this.ParseVersion($versionString)
+    }
+
+    SemanticVersion([version]$versionString = "0.0.0") {
+        $this.ParseVersion($versionString)
+    }
+
+    [void] ParseVersion([string]$versionString) {
+        if ($versionString -match '^(?<major>\d+)\.(?<minor>\d+)(?:\.(?<patch>\d+))?(?:\.(?<revision>\d+))?$') {
+            # Simple version without prerelease or build metadata that allows for a missing patch or revision
+            $this.Major = [int]$Matches.major
+            $this.Minor = [int]$Matches.minor
+            if ($Matches.patch) {
+                $this.Patch = [int]$Matches.patch
+            } else {
+                $this.Patch = 0
+            }
+            if ($Matches.revision) {
+                $this.Revision = [int]$Matches.revision
+            } else {
+                $this.Revision = -1
+            }
+        } elseif ($versionString -match '^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:\.(?<revision>\d+)|(?:-(?<prerelease>[0-9A-Za-z-\.]+)))?(?:\+(?<metadata>.+))?$') {
+            $this.Major = [int]$Matches.major
+            $this.Minor = [int]$Matches.minor
+            $this.Patch = [int]$Matches.patch
+            $this.Revision = [int]$Matches.revision
+            $this.BuildLabel = $Matches.build
+            if ($Matches.prerelease) {
+                if ($Matches.prerelease -match '^(?<type>[a-zA-Z0-9]+?)(?:(?<number>\d+))?$') {
+                    $this.PrereleaseLabel = $matches.type
+                    if ($matches.number) {
+                        $this.PreReleaseNumber = [int]$matches.number
+                    }
+                }
+                elseif ($Matches.prerelease -match '^(?<type>[A-Za-z]+)(?:\.(?<number>\d+))?$') {
+                    $this.PrereleaseLabel = $matches.type
+                    if ($matches.number) {
+                        $this.PreReleaseNumber = [int]$matches.number
+                    }
+                }
+            }
+        } else {
+            throw "Invalid semantic version format: $versionString"
+        }
+    }
+
+    [bool] HasPrereleaseLabel() {
+        return -not [string]::IsNullOrEmpty($this.PrereleaseLabel)
+    }
+
+    [string[]] get_PrereleaseLabelIdentifiers() {
+        if ($this.HasPrereleaseLabel) {
+            return $this.PrereleaseLabel -split '\.'
+        }
+        return @()
+    }
+
+    [string] Prerelease() {
+        if ($this.HasPrereleaseLabel) {
+            if ($this.PreReleaseNumber -gt 0) {
+                return "$($this.PrereleaseLabel)$($this.PreReleaseNumber)"
+            } else {
+                return $this.PrereleaseLabel
+            }
+        } else {
+            return $null
+        }
+    }
+
+    [string] Prerelease2() {
+        if ($this.HasPrereleaseLabel) {
+            if ($this.PreReleaseNumber -gt 0) {
+                return "$($this.PrereleaseLabel).$($this.PreReleaseNumber)"
+            } else {
+                return $this.PrereleaseLabel
+            }
+        } else {
+            return $null
+        }
+    }
+
+    [string] ToString() {
+        $ver = "$($this.Major).$($this.Minor).$($this.Patch)"
+        if ($this.PrereleaseLabel) {
+            $ver += "-$($this.PrereleaseLabel)"
+            if ($this.PreReleaseNumber -gt 0) {
+                $ver += "$($this.PreReleaseNumber)"
+            }
+        }
+        return $ver
+    }
+
+    [string] ToString2() {
+        $ver = "$($this.Major).$($this.Minor).$($this.Patch)"
+        if ($this.PrereleaseLabel) {
+            $ver += "-$($this.PrereleaseLabel)"
+            if ($this.PreReleaseNumber -gt 0) {
+                $ver += ".$($this.PreReleaseNumber)"
+            }
+        }
+        if ($this.BuildLabel) {
+            $ver += "+$($this.BuildLabel)"
+        }
+        return $ver
+    }
+
+    [Version] ToVersionCore() {
+        return [Version]::new($this.Major, $this.Minor, $this.Patch)
+    }
+
+    [Version] ToVersion() {
+        if ($this.Revision -ge 0) {
+            return [Version]::new($this.Major, $this.Minor, $this.Patch, $this.Revision)
+        } else {
+            return [Version]::new($this.Major, $this.Minor, $this.Patch)
+        }
+    }
+
+    [int] CompareTo([Object]$other) {
+        if ($null -eq $other) { return 1 }
+        if (-not ($other -is [SemanticVersion])) {
+            throw "Cannot compare SemanticVersion to $($other.GetType().Name)"
+        }
+
+        $cmp = $this.Major.CompareTo($other.Major)
+        if ($cmp -ne 0) { return $cmp }
+
+        $cmp = $this.Minor.CompareTo($other.Minor)
+        if ($cmp -ne 0) { return $cmp }
+
+        $cmp = $this.Patch.CompareTo($other.Patch)
+        if ($cmp -ne 0) { return $cmp }
+
+        # Handle prerelease (lower is newer)
+        if ($this.HasPrereleaseLabel() -and -not $other.HasPrereleaseLabel()) { return -1 }
+        if (-not $this.HasPrereleaseLabel() -and $other.HasPrereleaseLabel()) { return 1 }
+        if ($this.HasPrereleaseLabel() -and $other.HasPrereleaseLabel()) {
+            $cmp = $this.PrereleaseLabel.CompareTo($other.PrereleaseLabel)
+            if ($cmp -ne 0) { return $cmp }
+            if ($this.PreReleaseNumber -ne $other.PreReleaseNumber) {
+                return $this.PreReleaseNumber.CompareTo($other.PreReleaseNumber)
+            }
+        }
+
+        return 0
+    }
+
+    [bool]IsGreaterThan([SemanticVersion]$other) {
+        return $this.CompareTo($other) -gt 0
+    }
+
+    [bool]IsGreaterThanOrEqual([SemanticVersion]$other) {
+        return $this.CompareTo($other) -ge 0
+    }
+
+    [bool]IncrementToBeGreaterThan([SemanticVersion[]]$versionList) {
+        $highest = $null
+        foreach ($v in $versionList) {
+            if (-not $highest -or $v.CompareTo($highest) -gt 0) {
+                $highest = $v
+            }
+        }
+        if ($highest) {
+            if ($this.IsGreaterThan($highest)) { return $False}
+            if ($this.CompareTo($highest) -eq 0) {
+                if ($this.HasPrereleaseLabel()) {
+                    $this.PreReleaseNumber += 1
+                } else {
+                    $this.Patch += 1
+                }
+                return $True
+            } # If it's already equal, no need to increment
+            $this.Major = $highest.Major
+            $this.Minor = $highest.Minor
+            $this.Patch = $highest.Patch
+            if ($this.HasPrereleaseLabel()) {
+                if ($this.PrereleaseLabel -eq $highest.PrereleaseLabel) {
+                    if ($this.PreReleaseNumber -le $highest.PreReleaseNumber) {
+                        $this.PreReleaseNumber = $highest.PreReleaseNumber + 1
+                    }
+                } else {
+                    # if The current version has a prerelease label that is lower than the highest, increment the patch
+                    if ((-not $highest.PrereleaseLabel) -or ($this.PrereleaseLabel.CompareTo($highest.PrereleaseLabel) -lt 0)) {
+                        $this.Patch += 1
+                        $this.PreReleaseNumber = 0
+                    }
+                }
+            } elseif ($highest.HasPrereleaseLabel()) {
+
+            } else {
+                $this.Patch += 1
+            }
+            return $True
+        }
+        return $false
+    }
+
+    [bool]IncrementToBeGreaterThanOrEqual([SemanticVersion[]]$versionList) {
+        $highest = $null
+        foreach ($v in $versionList) {
+            if (-not $highest -or $v.CompareTo($highest) -gt 0) {
+                $highest = $v
+            }
+        }
+        if ($highest) {
+            if ($this.IsGreaterThanOrEqual($highest)) { return $false}
+            $this.Major = $highest.Major
+            $this.Minor = $highest.Minor
+            $this.Patch = $highest.Patch
+            if ($this.HasPrereleaseLabel()) {
+                if ($this.PrereleaseLabel -eq $highest.PrereleaseLabel) {
+                    if ($this.PreReleaseNumber -lt $highest.PreReleaseNumber) {
+                        $this.PreReleaseNumber = $highest.PreReleaseNumber
+                    }
+                } else {
+                    # if The current version has a prerelease label that is lower than the highest, increment the patch
+                    if ((-not $highest.PrereleaseLabel) -or ($this.PrereleaseLabel.CompareTo($highest.PrereleaseLabel) -lt 0)) {
+                        $this.Patch += 1
+                        $this.PreReleaseNumber = 0
+                    }
+                }
+            }
+            return $True
+        }
+        return $false
+    }
+
+    # New: Increment Major
+    [void]IncrementMajor() {
+        $this.Major += 1
+        $this.Minor = 0
+        $this.Patch = 0
+        # $this.PrereleaseLabel = ""
+        $this.PreReleaseNumber = 0
+    }
+
+    # New: Increment Minor
+    [void]IncrementMinor() {
+        $this.Minor += 1
+        $this.Patch = 0
+        # $this.PrereleaseLabel = ""
+        $this.PreReleaseNumber = 0
+    }
+
+    # New: Increment Patch
+    [void]IncrementPatch() {
+        $this.Patch += 1
+        # $this.PrereleaseLabel = ""
+        $this.PreReleaseNumber = 0
+    }
+}
 
 Function Write-Description {
     # Basic indented descriptive build output. $Description can contain Newlines.
@@ -28,6 +293,9 @@ Function Write-Description {
     If ($accent) {
         $accentleft = $AccentL
         $accentright = $AccentR
+    } else {
+        $accentleft = ''
+        $accentright = ''
     }
 
     $Description -split '\r\n|\n' | ForEach-Object { Write-HostMessage -object "$accentleft$thisindent$($_)$accentright" -ForegroundColor $color }
@@ -387,6 +655,7 @@ task RunMetaTests LoadRequiredModules, {
     $config.Run.Exit = $false
     $config.Filter.Tag = @('MetaTest')
     $config.Run.Path = $(Join-Path $BuildRoot 'Tests')
+    $config.Output.Verbosity = 'Detailed'
     $testResults = Invoke-Pester -Configuration $config
     $numberFails = $testResults.FailedCount
     assert($numberFails -eq 0) ('Failed "{0}" meta tests.' -f $numberFails)
@@ -400,6 +669,7 @@ task RunUnitTests LoadRequiredModules, {
     $config.Run.Exit = $false
     $config.Filter.Tag = @('UnitTest')
     $config.Run.Path = $(Join-Path $BuildRoot 'Tests')
+    $config.Output.Verbosity = 'Detailed'
     $testResults = Invoke-Pester -Configuration $config
     $numberFails = $testResults.FailedCount
     assert($numberFails -eq 0) ('Failed "{0}" unit tests.' -f $numberFails)
@@ -413,6 +683,7 @@ task RunIntergrationTests LoadRequiredModules, {
     $config.Run.Exit = $false
     $config.Filter.Tag = @('IntergrationTest')
     $config.Run.Path = $(Join-Path $BuildRoot 'Tests')
+    $config.Output.Verbosity = 'Detailed'
     $testResults = Invoke-Pester -Configuration $config
     $numberFails = $testResults.FailedCount
     assert($numberFails -eq 0) ('Failed "{0}" unit tests.' -f $numberFails)
@@ -468,15 +739,15 @@ task CreateMarkdownHelp GetPublicFunctions, {
     $MissingDocumentation = Select-String -Path "$($StageReleasePath)\docs\*.md" -Pattern "({{.*}})"
 
     if ($MissingDocumentation.Count -gt 0) {
-        Write-Build Yellow ''
-        Write-Build Yellow '   The documentation that got generated resulted in missing sections which should be filled out.'
-        Write-Build Yellow '   Please review the following sections in your comment based help, fill out missing information and rerun this build:'
-        Write-Build Yellow '   (Note: This can happen if the .EXTERNALHELP CBH is defined for a function before running this build.)'
-        Write-Build White ''
-        Write-Build Yellow "Path of files with issues: $($StageReleasePath)\docs\"
-        Write-Build White ''
+        Write-Description Yellow ''
+        Write-Description Yellow '   The documentation that got generated resulted in missing sections which should be filled out.'
+        Write-Description Yellow '   Please review the following sections in your comment based help, fill out missing information and rerun this build:'
+        Write-Description Yellow '   (Note: This can happen if the .EXTERNALHELP CBH is defined for a function before running this build.)'
+        Write-Description White ''
+        Write-Description Yellow "Path of files with issues: $($StageReleasePath)\docs\"
+        Write-Description White ''
         $MissingDocumentation | Select-Object Path, LineNumber, Line | Format-Table -auto
-        Write-Build Yellow ''
+        Write-Description Yellow ''
         pause
 
         throw 'Missing documentation. Please review and rebuild.'
@@ -695,16 +966,16 @@ task InsertCBHInPublicFunctions {
         }
         Remove-Item Function:\$($currfunct.Name)
     }
-    Write-Build White ''
-    Write-Build  Yellow '****************************************************************************************************'
-    Write-Build  Yellow "  Updated Functions: $CBHUpdates"
+    Write-Description White ''
+    Write-Description  Yellow '****************************************************************************************************'
+    Write-Description  Yellow "  Updated Functions: $CBHUpdates"
     if ($CBHUpdates -gt 0) {
-        Write-Build White ''
-        Write-Build Yellow "  Updated Function Location: $($ScratchPath)\$($Script:BuildEnv.PublicFunctionSource)"
-        Write-Build White ''
-        Write-Build Yellow "  NOTE: Please inspect these files closely. If they look good merge them back into your project"
+        Write-Description White ''
+        Write-Description Yellow "  Updated Function Location: $($ScratchPath)\$($Script:BuildEnv.PublicFunctionSource)"
+        Write-Description White ''
+        Write-Description Yellow "  NOTE: Please inspect these files closely. If they look good merge them back into your project"
     }
-    Write-Build  Yellow '****************************************************************************************************'
+    Write-Description  Yellow '****************************************************************************************************'
     $null = Read-Host 'Press Enter to continue...'
 }
 
@@ -809,9 +1080,14 @@ task AnalyzeModuleRelease -if {$Script:BuildEnv.OptionAnalyzeCode} {
 task PushVersionRelease {
     Write-Description Magenta "Attempting to push a version release of the module" -accent
 
+    $ManifestVersion = ($Script:Manifest).Version
+    if ($Script:Manifest.PrivateData.PSData.Prerelease) {
+        $ManifestVersion = "$ManifestVersion-$($Script:Manifest.PrivateData.PSData.Prerelease)"
+    }
+
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
-    $ThisReleasePath = Join-Path $ReleasePath $Script:BuildEnv.ModuleVersion
-    $ThisBuildReleasePath = ".\$($Script:BuildEnv.BaseReleaseFolder)\$($Script:BuildEnv.ModuleVersion)"
+    $ThisReleasePath = Join-Path $ReleasePath $ManifestVersion
+    # $ThisBuildReleasePath = ".\$($Script:BuildEnv.BaseReleaseFolder)\$($Script:BuildEnv.ModuleVersion)"
     $StageReleasePath = Join-Path (Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder) $Script:BuildEnv.BaseReleaseFolder
 
     $null = Remove-Item $ThisReleasePath -Force -Recurse -ErrorAction 0
@@ -911,81 +1187,101 @@ task PublishPSGallery LoadRequiredModules, InstallModule, {
 
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
     $CurrentReleasePath = Join-Path $ReleasePath $Script:BuildEnv.ModuleToBuild
-    if (Get-Module $Script:BuildEnv.ModuleToBuild) {
-        Write-Description Magenta "This module is already installed $($Script:BuildEnv.ModuleToBuild). Removing it" -Level 2
-        Write-Verbose "$($(Get-Module $Script:BuildEnv.ModuleToBuild).Path)"
-        Get-Module $Script:BuildEnv.ModuleToBuild | ForEach-Object {
-            Remove-Module $_.Name
-        }
-    }
 
-    # Try to import the current module
-    $CurrentModule = Join-Path $CurrentReleasePath "$($Script:BuildEnv.ModuleToBuild).psd1"
-    if (Test-Path $CurrentModule) {
-        Import-Module -Name $CurrentModule
+    Write-Description Magenta "Publishing module to Repository:$($Script:BuildEnv.NugetRepository)" -accent
 
-        Write-Description Magenta "Uploading project to PSGallery: $($Script:BuildEnv.ModuleToBuild)"
-        Publish-MBTProjectToPSGallery -Name $Script:BuildEnv.ModuleToBuild -Repository $Script:BuildEnv.NugetRepository -NuGetApiKey $Script:BuildEnv.NuGetApiKey -RequiredVersion $Script:BuildEnv.ModuleVersion
-    }
+    Publish-Module -Path $CurrentReleasePath -NuGetApiKey $Script:BuildEnv.NuGetApiKey -Repository $Script:BuildEnv.NugetRepository
 
-    else {
-        Write-Warning "Unable to publish the module as a current release is not available in $CurrentModule"
-    }
+#     if (Get-Module $Script:BuildEnv.ModuleToBuild) {
+#         Write-Description Magenta "This module is already installed $($Script:BuildEnv.ModuleToBuild). Removing it" -Level 2
+#         Write-Verbose "$($(Get-Module $Script:BuildEnv.ModuleToBuild).Path)"
+#         Get-Module $Script:BuildEnv.ModuleToBuild | ForEach-Object {
+#             Remove-Module $_.Name
+#         }
+#     }
+
+#     # Try to import the current module
+#     $CurrentModule = Join-Path $CurrentReleasePath "$($Script:BuildEnv.ModuleToBuild).psd1"
+#     if (Test-Path $CurrentModule) {
+#         Import-Module -Name $CurrentModule
+
+#         Write-Description Magenta "Uploading project to PSGallery: $($Script:BuildEnv.ModuleToBuild)"
+#         Publish-MBTProjectToPSGallery -Name $Script:BuildEnv.ModuleToBuild -Repository $Script:BuildEnv.NugetRepository -NuGetApiKey $Script:BuildEnv.NuGetApiKey -RequiredVersion $Script:BuildEnv.ModuleVersion
+#     }
+
+#     else {
+#         Write-Warning "Unable to publish the module as a current release is not available in $CurrentModule"
+#     }
 }
 
 # Synopsis: Validates that appveyor is using the next available version or higher
 task DetectNewVersion LoadRequiredModules, LoadModuleManifest, {
     Write-Description Magenta 'Validating Appveyor, manifest, build, and gallery module versions.' -accent
 
-    [Version]$NewVersion = '0.0'
-    if ($NewVersion -lt ($Script:Manifest).Version) {
-        Write-Verbose "Setting NewVersion = $(($Script:Manifest).Version) from Manifest.Version"
-        [Version]$NewVersion = ($Script:Manifest).Version
+    $SemanticVersionFilter = '^(?<major>\d+)\.(?<minor>\d+)\.(?<patch>\d+)(?:\.(?<revision>\d+)|(?:-(?<prerelease>[0-9A-Za-z-\.]+)))?(?:\+(?<metadata>.+))?$'
+    # Manifest and BuildEnv does not have ReleaseType, so check is limited. This is hacky but works for now.
+
+    $ManifestVersion = ($Script:Manifest).Version
+    $ManifestPrerelease = $Script:Manifest.PrivateData.PSData.Prerelease
+    if ($ManifestPrerelease) {
+        $ManifestVersion = "$ManifestVersion-$ManifestPrerelease"
+    }
+    $BuildEnvModuleVersion = $Script:BuildEnv.ModuleVersion
+    if ($ReleaseType) {
+        $NewVersion = [SemanticVersion]::new("0.0.0-$ReleaseType")
+        $BuildEnvModuleVersion = "$BuildEnvModuleVersion-$ReleaseType"
+    } else {
+        $NewVersion = [SemanticVersion]::new("0.0.0")
+    }
+
+    # Check for the NewVersion in the Manifest
+    Write-Verbose "Checking Manifest Version: $($Script:Manifest.Version) against NewVersion: $NewVersion"
+
+    if ($NewVersion.IncrementToBeGreaterThanOrEqual($ManifestVersion)) {
+        Write-Verbose "Setting NewVersion = $NewVersion from Manifest.Version"
         $NewVersionSource = "Manifest"
     }
-    if ($NewVersion -lt $Script:BuildEnv.ModuleVersion) {
-        Write-Verbose "Setting NewVersion = $($Script:BuildEnv.ModuleVersion) from BuildEnv.ModuleVersion"
-        [Version]$NewVersion = $Script:BuildEnv.ModuleVersion
+    # Check for the NewVersion in the BuildEnv
+    Write-Verbose "Checking BuildEnv Version: $($Script:BuildEnv.ModuleVersion) against NewVersion: $NewVersion"
+    if ($NewVersion.IncrementToBeGreaterThanOrEqual($BuildEnvModuleVersion)) {
+        Write-Verbose "Setting NewVersion = $NewVersion from BuildEnv.ModuleVersion"
         $NewVersionSource = "BuildEnv"
     }
+    # Check for latest build version in the release folder
     $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
     if (Test-path -Path $ReleasePath) {
-        $LatestBuild = Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -match '^([0-9]+(?:\.[0-9]+)+)$'} | ForEach-Object {[version]$_.Name} | Sort-Object -Descending | Select-Object -First 1
-        Write-Host "LatestBuild: $LatestBuild" -foregroundcolor Yellow
-        if ($LatestBuild -and ($LatestBuild -gt $NewVersion)) {
-            Write-Verbose "Setting NewVersion = $($LatestBuild) from LatestBuild"
-            [Version]$NewVersion = $LatestBuild
-            $NewVersionSource = "LatestBuild"
+        $LatestBuilds = Get-ChildItem $ReleasePath -Directory | Where-Object {$_.Name -match '^([0-9]+(?:\.[0-9]+)+(-[A-Za-z0-9]+)?)$'}
+        foreach ($LatestBuild in $LatestBuilds.Name) {
+            Write-Verbose "Checking LatestBuild Version: $LatestBuild against NewVersion: $NewVersion"
+            if ($NewVersion.IncrementToBeGreaterThan($LatestBuild)) {
+                Write-Verbose "Setting NewVersion = $NewVersion from LatestBuild.Name"
+                $NewVersionSource = "LatestBuild"
+            }
         }
     }
-    $GalleryVersion = Find-Module -Name ($Script:BuildEnv.ModuleToBuild) -Repository $Script:BuildEnv.NugetRepository -ErrorAction:SilentlyContinue
-    if ($GalleryVersion) {
-        $GalleryVersion = $GalleryVersion.Version.Split(".")
-        if ($GalleryVersion[2]) {$GalleryVersion[2] = [int]$GalleryVersion[2] + 1} else {$GalleryVersion += 0}
-        if ($GalleryVersion[3]) {$GalleryVersion[3] = [int]$GalleryVersion[3] + 1}
-        [Version]$GalleryVersion = $GalleryVersion -join '.'
-        if ($NewVersion -lt $GalleryVersion ) {
-            Write-Verbose "Setting NewVersion = $($GalleryVersion) from GalleryVersion"
-            [Version]$NewVersion = $GalleryVersion
+    # Check for the LastRelease in the Nuget Repository
+    $GalleryVersions = Find-Module -Name ($Script:BuildEnv.ModuleToBuild) -Repository $Script:BuildEnv.NugetRepository -AllowPrerelease -AllVersions -ErrorAction:SilentlyContinue
+    foreach ($GalleryVersion in $GalleryVersions) {
+        Write-Verbose "Checking Gallery Version: $($GalleryVersion.Version) against NewVersion: $NewVersion"
+        if ($NewVersion.IncrementToBeGreaterThan($GalleryVersion.Version) ) {
+            Write-Verbose "Setting NewVersion = $NewVersion from GalleryVersion"
             $NewVersionSource = $Script:BuildEnv.NugetRepository
         }
     }
-    else {
-        Write-Description Magenta 'This module has not been published to the gallery so any version is ok to build at this point.' -Level 2
+    # Check for the NewVersion in the Git tags
+    $GitVersionTags = git tag -l | ForEach-Object {$_.TrimStart('v')} | Where-Object {$_ -match $SemanticVersionFilter}
+    ForEach ($GitVersionTag in $GitVersionTags) {
+        Write-Verbose "Checking GitTag Version: $($GitVersionTag) against NewVersion: $NewVersion"
+        if ($NewVersion.IncrementToBeGreaterThan($GitVersionTag)) {
+            Write-Verbose "Setting NewVersion = $NewVersion from Git tags"
+            $NewVersionSource = "Git Tags"
+        }
     }
 
-    if (($env:APPVEYOR) -and ($NewVersion -lt [version]$env:APPVEYOR_BUILD_VERSION)) {
+    # Check for the NewVersion in the Appveyor environment variable
+    if (($env:APPVEYOR) -and ($NewVersion.IncrementToBeGreaterThan([version]$env:APPVEYOR_BUILD_VERSION))) {
         Write-Verbose "Setting NewVersion = $($env:APPVEYOR_BUILD_VERSION) from env:APPVEYOR_BUILD_VERSION"
-        [Version]$NewVersion = $env:APPVEYOR_BUILD_VERSION
         $NewVersionSource = "Appveyor"
-    }
-
-    # If tracking revisions keep up with Appveyor count
-    if (($env:APPVEYOR) -and (($NewVersion.Revision -ge 0) -and ($env:APPVEYOR_BUILD_NUMBER -gt $NewVersion.Revision))) {
-        Write-Verbose "Setting NewVersion.Revision = $($env:APPVEYOR_BUILD_NUMBER) from env:APPVEYOR_BUILD_NUMBER"
-        [String[]]$NewVersion = $NewVersion.tostring().Split(".")
-        $NewVersion[3] = [int]$env:APPVEYOR_BUILD_NUMBER
-        [Version]$NewVersion = $NewVersion -join '.'
     }
 
     do {
@@ -1012,18 +1308,22 @@ task DetectNewVersion LoadRequiredModules, LoadModuleManifest, {
     if ($NewVersion -ne ($Script:Manifest).Version) {
         Write-Description Magenta 'Updating Manifest version' -Level 2
         $ModuleManifestFullPath = Join-Path $BuildRoot "$($Script:BuildEnv.ModuleToBuild).psd1"
-        Update-ModuleManifest -Path $ModuleManifestFullPath -ModuleVersion $NewVersion
+        Write-Verbose "Updating module manifest with new module version: $($NewVersion.ToVersionCore()) and prerelease label: $($NewVersion.Prerelease())"
+        if ($NewVersion.PrereleaseLabel) {
+            Update-ModuleManifest -Path $ModuleManifestFullPath -ModuleVersion $NewVersion.ToVersionCore() -Prerelease $NewVersion.Prerelease()
+        } else {
+            Update-ModuleManifest -Path $ModuleManifestFullPath -ModuleVersion $NewVersion.ToVersion() -Prerelease "`r" # Stupid fix to get rid of the Prerelease label in the manifest
+        }
         $Script:Manifest = Test-ModuleManifest -Path $ModuleManifestFullPath
     }
     if ($NewVersion -ne $Script:BuildEnv.ModuleVersion) {
         Write-Description Magenta 'Updating module version in the build configuration file' -Level 2
-        [String]$Script:BuildEnv.ModuleVersion = $NewVersion
+        [String]$Script:BuildEnv.ModuleVersion = $NewVersion.ToVersionCore()
         Save-BuildData
     }
     Write-Description Magenta "Module Version is $NewVersion provided from $NewVersionSource" -Level 2
-    $script:NewVersion = $NewVersion
+    # [SemanticVersion]$script:NewVersion = $NewVersion
     $env:ModuleVersion = $NewVersion
-
 }
 
 # Synopsis: Set a new version of the module
@@ -1039,7 +1339,7 @@ task NewVersion LoadRequiredModules, LoadModuleManifest, {
         do {
             $NewVersion = Read-Host -Prompt 'Enter the version (ie 0.0.8) for your build release'
             if ([string]::IsNullOrEmpty($NewVersion)) {
-                Write-Build Red "You need to enter a valid module version (ie. 1.2.0)" -level 2
+                Write-Description Red "You need to enter a valid module version (ie. 1.2.0)" -level 2
             }
         } while ( [string]::IsNullOrEmpty($NewVersion) -and ($NewVersion -notmatch '\d+\.\d+\.\d+') )
     }
@@ -1056,7 +1356,7 @@ task NewVersion LoadRequiredModules, LoadModuleManifest, {
 
     Write-Description Magenta 'Updating module manifest with new module version' -level 2
     try {
-        Update-ModuleManifest -Path $ModuleManifestFullPath -ModuleVersion $NewVersion
+        Update-ModuleManifest -Path $ModuleManifestFullPath -ModuleVersion $NewVersion.toVersion()
     }
     catch {
         throw $_
@@ -1073,7 +1373,7 @@ task UpdateRelease NewVersion, LoadRequiredModules, LoadModuleManifest, {
         do {
             $ReleaseNotes = Read-Host -Prompt 'Enter brief release notes for this new version'
             if ([string]::IsNullOrEmpty($ReleaseNotes)) {
-                Write-Build Red "You need to enter some kind of notes for your new release to update the manifest with!" -level 2
+                Write-Description Red "You need to enter some kind of notes for your new release to update the manifest with!" -level 2
             }
         } while ([string]::IsNullOrEmpty($ReleaseNotes))
     }
@@ -1120,20 +1420,30 @@ task AutoIncreaseVersionBuildLevel -after PublishPSGallery -if {$Script:BuildEnv
 # Synopsis: Push to github
 task GithubPushVersionRelease VersionCheck, {
 
-    $changes = exec { git status --short }
-    Write-Description Magenta "Attempting to Push $($changes.count) Git Changes" -accent
-    Write-Description DarkGray $changes
-    exec { git fetch }
-    exec { git add . }
-    if (-not [string]::IsNullOrEmpty($ReleaseNotes)) {
-        exec { git commit -m "$ReleaseNotes"}
-    }
-    else {
-        exec { git commit -m "Build $($Script:BuildEnv.ModuleVersion)"}
+    Write-Description Magenta "Attempting to Push Git Changes" -accent
+    $ManifestVersion = ($Script:Manifest).Version
+    if ($Script:Manifest.PrivateData.PSData.Prerelease) {
+        $ManifestVersion = "$ManifestVersion-$($Script:Manifest.PrivateData.PSData.Prerelease)"
     }
 
-    exec { git tag -a "v$($Script:BuildEnv.ModuleVersion)" -m "v$($Script:BuildEnv.ModuleVersion)" }
-    git push --follow-tags --quiet | Write-host -ForegroundColor Yellow
+    exec { git fetch } | Write-Verbose
+    $changes = exec { git status --short }
+    Write-Description Magenta "$($changes.count) Git Changes" -Level 3
+    if ($changes) {
+        Write-Description DarkGray ($changes | Out-String) -level 2
+        exec { git add . }
+        if (-not [string]::IsNullOrEmpty($ReleaseNotes)) {
+            exec { git commit -m "$ReleaseNotes" }
+        }
+        else {
+            exec { git commit -m "Build $ManifestVersion" }
+        }
+    }
+
+    Write-Verbose "git tag -a `"v$ManifestVersion`" -m `"v$ManifestVersion`""
+    exec { git tag -a "v$ManifestVersion" -m "v$ManifestVersion" }
+    Write-Verbose "git push --follow-tags --quiet"
+    exec { git push --follow-tags --quiet }
 
     $changes = exec { git status --short }
     assert (-not $changes) "Please, commit changes.`n$changes"
@@ -1195,7 +1505,7 @@ task BuildSessionCleanup CleanScratchDirectory, {
 #region Main tasks
 
 # Synopsis: Automatically Determine New Version instead of Prompting
-task AutomaticNewVersion DetectNewVersion, NewVersion
+task AutomaticNewVersion DetectNewVersion
 
 # Synopsis: Run all tests
 task Tests RunMetaTests, RunUnitTests, RunIntergrationTests

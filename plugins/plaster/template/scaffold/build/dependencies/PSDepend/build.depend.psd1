@@ -23,4 +23,16 @@
         version = 'latest'
         source = 'PSGalleryModule'
     }
+    Pester = @{
+        version = 'latest'
+        source = 'PSGalleryModule'
+    }
+    # BuildHelpers = @{
+    #     version = 'latest'
+    #     source = 'PSGalleryModule'
+    # }
+    pspostman = @{
+        version = 'latest'
+        source = 'PSGalleryModule'
+    }
 }
