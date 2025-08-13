@@ -42,7 +42,9 @@ function Initialize-MBModuleBuild {
         [String]$ModuleWebsite,
         [String]$ModuleVersion,
         [String]$ModuleTags,
+        [ValidateSet('CreativeCommons', 'MIT', 'Apache', 'GPL')]
         [String]$ProjectLicense,
+        [ValidateSet('None', 'appVeyor', 'github')]
         [String]$CICD,
         [bool]$OptionAnalyzeCode,
         [bool]$OptionCodeHealthReport,
