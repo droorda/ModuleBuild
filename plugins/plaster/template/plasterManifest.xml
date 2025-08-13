@@ -231,6 +231,9 @@
     <file
       source="scaffold\tests\unit\public\*"
       destination="tests\unit\public" />
+    <file
+      source="scaffold\tests\unit\Minimal.tests.ps1"
+      destination="tests\unit\Minimal.tests.ps1" />
     <templateFile
       source="scaffold\plugins\.gitkeep"
       destination="plugins\.gitkeep" />
