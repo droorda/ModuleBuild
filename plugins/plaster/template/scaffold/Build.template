@@ -12,6 +12,8 @@ param (
     [parameter(ParameterSetName = 'UpdateRelease')]
     [switch]$AutoNewVersion,
     [parameter(ParameterSetName = 'UpdateRelease')]
+    [String]$ReleaseType,
+    [parameter(ParameterSetName = 'UpdateRelease')]
     [string]$ReleaseNotes,
     [parameter(ParameterSetName = 'UpdateRelease')]
     [switch]$UploadPSGallery,
@@ -28,6 +30,50 @@ param (
     [parameter(ParameterSetName = 'Tests')]
     [switch]$TestIntergrationOnly
 )
+
+function Update-PSDependsVersions {
+    [CmdletBinding()]
+    PARAM (
+        [Parameter(Mandatory=$True)]
+        [String]$PSDataFile
+
+    )
+    $DependList = Import-PowerShellDataFile -Path $PSDataFile
+    Foreach ($ModuleName in $DependList.Clone().Keys) {
+        if (-not ($DependList[$ModuleName].source -eq 'PSGalleryModule')) {
+        } elseif (-not ($DependList[$ModuleName].version -eq 'latest')) {
+        } else {
+            Try {
+                $FoundModule = Find-Module -Name $ModuleName -ErrorAction Stop
+                $DependList[$ModuleName].version = $FoundModule.Version
+            } Catch {
+                Write-Warning $_.Exception.Message
+            }
+        }
+    }
+    $DependList
+
+
+    $psd1Content = "@{`n"
+
+    # Add each module dependency
+    foreach ($key in $DependList.Keys) {
+        $module = $DependList[$key]
+        $psd1Content += "    '$key' = @{`n"
+
+        foreach ($property in $module.Keys) {
+            $value = $module[$property]
+            $psd1Content += "        $property = '$value'`n"
+        }
+
+        $psd1Content += "    }`n"
+    }
+
+    $psd1Content += "}"
+
+    # Write the updated content to the output file
+    $psd1Content | Out-File -FilePath $PSDataFile -Encoding UTF8
+}
 
 function PrerequisitesLoaded {
     # Install required modules if missing
@@ -89,7 +135,7 @@ switch ($psCmdlet.ParameterSetName) {
         }
 
         # Test, Build Install and test load the module
-        if ($TestBuildAndInstallModule) {
+        elseif ($TestBuildAndInstallModule) {
             try {
                 Invoke-Build -Task TestBuildAndInstallModule
             }
@@ -111,12 +157,22 @@ switch ($psCmdlet.ParameterSetName) {
     }
     'UpdateRelease' {
         if ($UpdateRelease) {
+            $Params = @{
+                ReleaseNotes = $ReleaseNotes
+                ReleaseType  = $ReleaseType
+            }
+            if ($AutoNewVersion) {
+                $Params.Task = 'AutomaticNewVersion'
+            }
+            else {
+                $Params.Task = 'UpdateRelease'
+                $Params.NewVersion = $NewVersion
+            }
+            if ($ReleaseType) {
+                $Params.ReleaseType = $ReleaseType
+            }
             try {
-                if ($AutoNewVersion) {
-                    Invoke-Build -Task AutomaticNewVersion -ReleaseNotes $ReleaseNotes
-                } else {
-                    Invoke-Build -Task UpdateRelease -NewVersion $NewVersion -ReleaseNotes $ReleaseNotes
-                }
+                Invoke-Build @Params
             }
             catch {
                 throw $_
