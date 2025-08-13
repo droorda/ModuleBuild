@@ -279,13 +279,19 @@ Function Write-Description {
     [CmdletBinding()]
     Param (
         [Parameter(Mandatory=$true,Position=0)]
-        [string]$color,
-        [Parameter(Mandatory=$true,Position=1)]
-        [string]$Description,
-        [int]$Level = 0,
-        [int]$indent = 1,
-        [switch]$accent,
-        [string]$AccentL = '* ',
+        [string]$color
+        ,
+        [Parameter(Mandatory=$false,Position=1)]
+        [string]$Description = ''
+        ,
+        [int]$Level = 0
+        ,
+        [int]$indent = 1
+        ,
+        [switch]$accent
+        ,
+        [string]$AccentL = '* '
+        ,
         [string]$AccentR = ''
     )
 
@@ -405,6 +411,10 @@ function Write-HostMessage {
             & Write-Host @PSBoundParameters
         }
     }
+}
+
+if ($null -ne $NewVersion) {
+    [SemanticVersion]$NewVersion = $NewVersion
 }
 
 if ($null -ne $host.UI -and ($hostProperties = $host.UI.psobject.Properties) -and ($supportsVT = $hostProperties['SupportsVirtualTerminal']) -and $supportsVT.Value) {
@@ -1140,7 +1150,12 @@ task PostBuildTasks {
 # Synopsis: Install the current built module to the local machine
 task InstallModule VersionCheck, {
     Write-Description Magenta "Attempting to install the current module" -accent
-    $CurrentModulePath = Join-Path $Script:BuildEnv.BaseReleaseFolder $Script:BuildEnv.ModuleVersion
+    $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
+    $ManifestVersion = ($Script:Manifest).Version
+    if ($Script:Manifest.PrivateData.PSData.Prerelease) {
+        $ManifestVersion = "$ManifestVersion-$($Script:Manifest.PrivateData.PSData.Prerelease)"
+    }
+    $CurrentModulePath = Join-Path $ReleasePath $ManifestVersion
     assert (Test-Path $CurrentModulePath) 'The current version module has not been built yet!'
 
     $MyModulePath = "$((Get-MBTSpecialPath)['MyDocuments'])\WindowsPowerShell\Modules\"
@@ -1263,18 +1278,26 @@ task DetectNewVersion LoadRequiredModules, LoadModuleManifest, {
     $GalleryVersions = Find-Module -Name ($Script:BuildEnv.ModuleToBuild) -Repository $Script:BuildEnv.NugetRepository -AllowPrerelease -AllVersions -ErrorAction:SilentlyContinue
     foreach ($GalleryVersion in $GalleryVersions) {
         Write-Verbose "Checking Gallery Version: $($GalleryVersion.Version) against NewVersion: $NewVersion"
-        if ($NewVersion.IncrementToBeGreaterThan($GalleryVersion.Version) ) {
-            Write-Verbose "Setting NewVersion = $NewVersion from GalleryVersion"
-            $NewVersionSource = $Script:BuildEnv.NugetRepository
+        Try {
+            if ($NewVersion.IncrementToBeGreaterThan($GalleryVersion.Version) ) {
+                Write-Verbose "Setting NewVersion = $NewVersion from GalleryVersion"
+                $NewVersionSource = $Script:BuildEnv.NugetRepository
+            }
+        } catch {
+            Write-Warning $_.Exception.Message
         }
     }
     # Check for the NewVersion in the Git tags
     $GitVersionTags = git tag -l | ForEach-Object {$_.TrimStart('v')} | Where-Object {$_ -match $SemanticVersionFilter}
     ForEach ($GitVersionTag in $GitVersionTags) {
         Write-Verbose "Checking GitTag Version: $($GitVersionTag) against NewVersion: $NewVersion"
-        if ($NewVersion.IncrementToBeGreaterThan($GitVersionTag)) {
-            Write-Verbose "Setting NewVersion = $NewVersion from Git tags"
-            $NewVersionSource = "Git Tags"
+        Try {
+            if ($NewVersion.IncrementToBeGreaterThan($GitVersionTag)) {
+                Write-Verbose "Setting NewVersion = $NewVersion from Git tags"
+                $NewVersionSource = "Git Tags"
+            }
+        } catch {
+            Write-Warning $_.Exception.Message
         }
     }
 
