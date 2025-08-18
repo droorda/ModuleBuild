@@ -1020,7 +1020,7 @@ task CreateModulePSM1 RemoveScriptSignatures, UpdateCBH, {
 
         $CombineFiles += "## PRIVATE MODULE FUNCTIONS AND DATA ##`r`n`r`n"
 
-        Get-childitem  (Join-Path $ScratchPath "$($Script:BuildEnv.PrivateFunctionSource)\*.ps1") | ForEach-Object {
+        Get-childitem -Recurse (Join-Path $ScratchPath "$($Script:BuildEnv.PrivateFunctionSource)\*.ps1") | ForEach-Object {
             Write-Description Magenta $_.Name -Level 4
             $CombineFiles += (Get-content $_ -Raw) + "`r`n`r`n"
         }
@@ -1028,7 +1028,7 @@ task CreateModulePSM1 RemoveScriptSignatures, UpdateCBH, {
         Write-Description Magenta 'Adding the public source files:' -Level 3
 
         $CombineFiles += "## PUBLIC MODULE FUNCTIONS AND DATA ##`r`n`r`n"
-        Get-childitem  (Join-Path $ScratchPath "$($Script:BuildEnv.PublicFunctionSource)\*.ps1") | ForEach-Object {
+        Get-childitem -Recurse (Join-Path $ScratchPath "$($Script:BuildEnv.PublicFunctionSource)\*.ps1") | ForEach-Object {
             Write-Description Magenta $_.Name -Level 4
             $CombineFiles += (Get-content $_ -Raw) + "`r`n`r`n"
         }
