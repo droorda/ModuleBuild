@@ -601,16 +601,36 @@ task PrepareStage CleanScratchDirectory, {
 # Synopsis:  Collect a list of our public methods for later module manifest updates
 task GetPublicFunctions {
     Write-Description Magenta 'Parsing for public (exported) function names' -accent
-    $Exported = @()
+    $ExportedFunction = @()
+    $ExportedAlias = @()
     Get-ChildItem (Join-Path $BuildRoot $Script:BuildEnv.PublicFunctionSource) -Recurse -Filter "*.ps1" -File | Sort-Object Name | ForEach-Object {
-        $Exported += ([System.Management.Automation.Language.Parser]::ParseInput((Get-Content -Path $_.FullName -Raw), [ref]$null, [ref]$null)).FindAll( { $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false) | ForEach-Object {$_.Name}
+        $ast = [System.Management.Automation.Language.Parser]::ParseInput((Get-Content -Path $_.FullName -Raw), [ref]$null, [ref]$null)
+        $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false) | ForEach-Object {
+            $ExportedFunction += $_.Name
+        }
+
+
+        $ast.FindAll(
+            {
+                $args[0] -is [System.Management.Automation.Language.CommandAst] -and
+                ($args[0].GetCommandName() -eq "Set-Alias" -or $args[0].GetCommandName() -eq "New-Alias")
+            },
+            $false
+        ) | ForEach-Object {
+            $commandElements = $_.CommandElements
+            if ($commandElements.Count -ge 3) {
+                $ExportedAlias += $commandElements[2].Value  # Second parameter is the target
+            }
+        }
     }
 
-    if ($Exported.Count -eq 0) {
+    if ($ExportedFunction.Count -eq 0) {
         Write-Error 'There are no public functions to export!'
     }
-    $Script:FunctionsToExport = $Exported
-    Write-Description Magenta "Number of exported functions found = $($Exported.Count)" -Level 2
+    $Script:FunctionsToExport = $ExportedFunction
+    Write-Description Magenta "Number of exported functions found = $($ExportedFunction.Count)" -Level 2
+    $Script:AliasesToExport = $ExportedAlias
+    Write-Description Magenta "Number of exported aliases found = $($ExportedAlias.Count)" -Level 2
 }
 
 # Synopsis: Validate that sensitive strings are not found in your code
@@ -1073,6 +1093,7 @@ task CreateModuleManifest CreateModulePSM1, {
     Write-Description Magenta "Attempting to update the release module manifest file:  $ThisPSD1OutputFile" -Level 2
     $null = Copy-Item -Path $ModuleManifestFullPath -Destination $PSD1OutputFile -Force
     Update-ModuleManifest -Path $PSD1OutputFile -FunctionsToExport $Script:FunctionsToExport
+    Update-ModuleManifest -Path $PSD1OutputFile -AliasesToExport $Script:AliasesToExport
 }
 # Synopsis: Run PSScriptAnalyzer against the assembled module
 task AnalyzeModuleRelease -if {$Script:BuildEnv.OptionAnalyzeCode} {
