@@ -685,7 +685,7 @@ task RunMetaTests LoadRequiredModules, {
     $config.Run.Exit = $false
     $config.Filter.Tag = @('MetaTest')
     $config.Run.Path = $(Join-Path $BuildRoot 'Tests')
-    $config.Output.Verbosity = 'Detailed'
+    $config.Output.Verbosity = if ($env:GITHUB_ACTIONS -or $env:CI) { 'Normal' } else { 'Detailed' }
     $testResults = Invoke-Pester -Configuration $config
     $numberFails = $testResults.FailedCount
     assert($numberFails -eq 0) ('Failed "{0}" meta tests.' -f $numberFails)
@@ -699,7 +699,7 @@ task RunUnitTests LoadRequiredModules, {
     $config.Run.Exit = $false
     $config.Filter.Tag = @('UnitTest')
     $config.Run.Path = $(Join-Path $BuildRoot 'Tests')
-    $config.Output.Verbosity = 'Detailed'
+    $config.Output.Verbosity = if ($env:GITHUB_ACTIONS -or $env:CI) { 'Normal' } else { 'Detailed' }
     $testResults = Invoke-Pester -Configuration $config
     $numberFails = $testResults.FailedCount
     assert($numberFails -eq 0) ('Failed "{0}" unit tests.' -f $numberFails)
@@ -713,7 +713,7 @@ task RunIntergrationTests LoadRequiredModules, {
     $config.Run.Exit = $false
     $config.Filter.Tag = @('IntergrationTest')
     $config.Run.Path = $(Join-Path $BuildRoot 'Tests')
-    $config.Output.Verbosity = 'Detailed'
+    $config.Output.Verbosity = if ($env:GITHUB_ACTIONS -or $env:CI) { 'Normal' } else { 'Detailed' }
     $testResults = Invoke-Pester -Configuration $config
     $numberFails = $testResults.FailedCount
     assert($numberFails -eq 0) ('Failed "{0}" unit tests.' -f $numberFails)
