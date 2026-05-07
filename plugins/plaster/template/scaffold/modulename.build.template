@@ -524,6 +524,7 @@ task VersionCheck LoadModuleManifest, {
 
     assert ( ($Script:Manifest).Version.ToString() -eq (($Script:BuildEnv.ModuleVersion)) ) "The module manifest version ( $(($Script:Manifest).Version.ToString()) ) and release version ($($Script:BuildEnv.ModuleVersion)) are mismatched. These must be the same before continuing. Consider running the UpdateRelease task to make the module manifest version the same as the release version."
     Write-Description White 'Manifest version and the release version in the build configuration file are the same.' -Level 2
+    Write-Description Magenta "Checking $($Script:BuildEnv.NugetRepository) Gallery version" -Level 2
     $GalleryVersion = Find-Module -Name ($Script:BuildEnv.ModuleToBuild) -Repository $Script:BuildEnv.NugetRepository -ErrorAction:SilentlyContinue
     if ($null -ne $GalleryVersion) {
         if ([version]$GalleryVersion.Version -gt [version]($Script:BuildEnv.ModuleVersion)) {
@@ -531,7 +532,7 @@ task VersionCheck LoadModuleManifest, {
         }
     }
     else {
-        Write-Description White 'This module has not been published to the gallery so any version is ok to build at this point.' -Level 2
+        Write-Description Magenta 'This module has not been published to the gallery so any version is ok to build at this point.' -Level 3
     }
 }
 
@@ -776,7 +777,7 @@ task CreateMarkdownHelp GetPublicFunctions, {
         Write-Description White ''
         Write-Description Yellow "Path of files with issues: $($StageReleasePath)\docs\"
         Write-Description White ''
-        $MissingDocumentation | Select-Object Path, LineNumber, Line | Format-Table -auto
+        $MissingDocumentation | Select-Object Path, LineNumber, Line | Format-Table -AutoSize -Wrap | Out-String -Width 120
         Write-Description Yellow ''
         pause
 
@@ -1326,6 +1327,159 @@ task DetectNewVersion LoadRequiredModules, LoadModuleManifest, {
     if (($env:APPVEYOR) -and ($NewVersion.IncrementToBeGreaterThan([version]$env:APPVEYOR_BUILD_VERSION))) {
         Write-Verbose "Setting NewVersion = $($env:APPVEYOR_BUILD_VERSION) from env:APPVEYOR_BUILD_VERSION"
         $NewVersionSource = "Appveyor"
+    }
+
+    # Bump Minor (instead of Patch) when a new public function has been added since the last published build.
+    # Source-of-truth for the previous export list, in priority order:
+    #   1. PSGallery / configured NuGet repo (authoritative; CI-friendly).
+    #   2. Local release folder's built manifest (covers dev builds before first publish).
+    # The source manifest is NOT a reliable baseline because CreateModuleManifest writes
+    # FunctionsToExport only into the staged release copy, never back to the source psd1.
+    # Skipped for prereleases (alpha/beta/rc), which iterate via the prerelease counter.
+    if (-not $ReleaseType) {
+        $PreviousFunctions = $null
+        $BaselineSource = $null
+
+        # 1. PSGallery / NuGet repo
+        Try {
+            $LatestGalleryStable = $GalleryVersions |
+                Where-Object { -not $_.AdditionalMetadata.IsPrerelease -or $_.AdditionalMetadata.IsPrerelease -eq 'false' } |
+                Sort-Object {[version]$_.Version} -Descending |
+                Select-Object -First 1
+            if ($LatestGalleryStable -and $LatestGalleryStable.Includes -and $LatestGalleryStable.Includes.Function) {
+                $PreviousFunctions = @($LatestGalleryStable.Includes.Function)
+                $BaselineSource = "$($Script:BuildEnv.NugetRepository) $($LatestGalleryStable.Version)"
+            }
+        } Catch {
+            Write-Verbose "Gallery baseline lookup failed: $($_.Exception.Message)"
+        }
+
+        # 2. Fallback: most recent local release folder's built manifest
+        if ($null -eq $PreviousFunctions) {
+            $ReleasePath = Join-Path $BuildRoot $Script:BuildEnv.BaseReleaseFolder
+            if (Test-Path $ReleasePath) {
+                $LatestLocalBuild = Get-ChildItem $ReleasePath -Directory |
+                    Where-Object { $_.Name -match '^([0-9]+(?:\.[0-9]+)+)$' } |
+                    Sort-Object { [version]$_.Name } -Descending |
+                    Select-Object -First 1
+                if ($LatestLocalBuild) {
+                    $LocalManifestPath = Join-Path $LatestLocalBuild.FullName "$($Script:BuildEnv.ModuleToBuild).psd1"
+                    if (Test-Path $LocalManifestPath) {
+                        Try {
+                            $LocalManifestData = Import-PowerShellDataFile -Path $LocalManifestPath
+                            $Funcs = $LocalManifestData.FunctionsToExport
+                            if ($Funcs -and $Funcs -notcontains '*') {
+                                $PreviousFunctions = @($Funcs)
+                                $BaselineSource = "Local Release $($LatestLocalBuild.Name)"
+                            }
+                        } Catch {
+                            Write-Verbose "Local release baseline read failed: $($_.Exception.Message)"
+                        }
+                    }
+                }
+            }
+        }
+
+        if ($PreviousFunctions -and $PreviousFunctions.Count -gt 0) {
+            $PublicSrcPath = Join-Path $BuildRoot $Script:BuildEnv.PublicFunctionSource
+            if (Test-Path $PublicSrcPath) {
+                $CurrentFunctions = @()
+                # alias name (old/external) -> alias target (function it forwards to)
+                $CurrentAliases   = @{}
+
+                Get-ChildItem $PublicSrcPath -Recurse -Filter "*.ps1" -File | ForEach-Object {
+                    $ast = [System.Management.Automation.Language.Parser]::ParseInput((Get-Content -Path $_.FullName -Raw), [ref]$null, [ref]$null)
+
+                    $ast.FindAll({ $args[0] -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $false) | ForEach-Object {
+                        $CurrentFunctions += $_.Name
+                    }
+
+                    # Parse Set-Alias / New-Alias (and their cmdlet aliases sal / nal) to capture rename mappings
+                    $ast.FindAll({
+                        $args[0] -is [System.Management.Automation.Language.CommandAst] -and
+                        ($args[0].GetCommandName() -in @('Set-Alias','New-Alias','sal','nal'))
+                    }, $false) | ForEach-Object {
+                        $cmd = $_
+                        $aliasName   = $null
+                        $aliasTarget = $null
+                        $positional  = @()
+                        for ($i = 1; $i -lt $cmd.CommandElements.Count; $i++) {
+                            $el = $cmd.CommandElements[$i]
+                            if ($el -is [System.Management.Automation.Language.CommandParameterAst]) {
+                                $pn = $el.ParameterName
+                                if (($pn -like 'na*') -or ($pn -eq 'n')) {
+                                    if (($i + 1) -lt $cmd.CommandElements.Count -and $cmd.CommandElements[$i + 1].Value) {
+                                        $aliasName = $cmd.CommandElements[$i + 1].Value
+                                        $i++
+                                    }
+                                } elseif (($pn -like 'val*') -or ($pn -eq 'v')) {
+                                    if (($i + 1) -lt $cmd.CommandElements.Count -and $cmd.CommandElements[$i + 1].Value) {
+                                        $aliasTarget = $cmd.CommandElements[$i + 1].Value
+                                        $i++
+                                    }
+                                }
+                            } elseif ($el.Value) {
+                                $positional += $el.Value
+                            }
+                        }
+                        if ($null -eq $aliasName   -and $positional.Count -ge 1) { $aliasName   = $positional[0] }
+                        if ($null -eq $aliasTarget -and $positional.Count -ge 2) { $aliasTarget = $positional[1] }
+                        if ($aliasName -and $aliasTarget) {
+                            $CurrentAliases[$aliasName] = $aliasTarget
+                        }
+                    }
+                }
+
+                $AddedFunctions   = @($CurrentFunctions  | Where-Object { $PreviousFunctions -notcontains $_ })
+                $RemovedFunctions = @($PreviousFunctions | Where-Object { $CurrentFunctions  -notcontains $_ })
+
+                # Split removals: a removed function that's still reachable through an alias to a
+                # current function is a backward-compatible rename, not a breaking removal.
+                $BreakingRemovals = @()
+                $AliasedRenames   = @()
+                foreach ($removed in $RemovedFunctions) {
+                    $target = $CurrentAliases[$removed]
+                    if ($target -and ($CurrentFunctions -contains $target)) {
+                        $AliasedRenames += "$removed -> $target"
+                    } else {
+                        $BreakingRemovals += $removed
+                    }
+                }
+
+                # Major beats Minor: any uncovered removal is breaking.
+                if ($BreakingRemovals.Count -gt 0) {
+                    Write-Description Yellow "Detected $($BreakingRemovals.Count) removed public function(s) (no backward-compat alias) since $($BaselineSource): $($BreakingRemovals -join ', ')" -Level 2
+                    if ($AliasedRenames.Count -gt 0) {
+                        Write-Description DarkGray "Backward-compat aliased renames: $($AliasedRenames -join '; ')" -Level 3
+                    }
+                    if ($AddedFunctions.Count -gt 0) {
+                        Write-Description DarkGray "Also detected $($AddedFunctions.Count) added: $($AddedFunctions -join ', ')" -Level 3
+                    }
+                    Write-Description Yellow "Bumping Major version (semver: breaking change - removed functionality)" -Level 2
+                    $NewVersion.IncrementMajor()
+                    $NewVersionSource = "Removed Public Function (Major bump from $BaselineSource)"
+                }
+                elseif ($AddedFunctions.Count -gt 0) {
+                    Write-Description Cyan "Detected $($AddedFunctions.Count) new public function(s) since $($BaselineSource): $($AddedFunctions -join ', ')" -Level 2
+                    if ($AliasedRenames.Count -gt 0) {
+                        Write-Description Cyan "Including aliased renames: $($AliasedRenames -join '; ')" -Level 3
+                    }
+                    Write-Description Cyan "Bumping Minor version (semver: added functionality)" -Level 2
+                    $NewVersion.IncrementMinor()
+                    $NewVersionSource = "New Public Function (Minor bump from $BaselineSource)"
+                }
+                elseif ($AliasedRenames.Count -gt 0) {
+                    # Pure rename: only the names changed, the surface area is otherwise unchanged.
+                    # New canonical names ARE additions, so still a Minor bump.
+                    Write-Description Cyan "Detected $($AliasedRenames.Count) aliased rename(s) since $($BaselineSource): $($AliasedRenames -join '; ')" -Level 2
+                    Write-Description Cyan "Bumping Minor version (semver: added functionality - new canonical name)" -Level 2
+                    $NewVersion.IncrementMinor()
+                    $NewVersionSource = "Aliased Rename (Minor bump from $BaselineSource)"
+                }
+            }
+        } else {
+            Write-Verbose "No baseline found (gallery / local release) - skipping new-function detection."
+        }
     }
 
     do {
