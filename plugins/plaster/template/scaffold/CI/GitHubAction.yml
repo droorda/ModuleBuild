@@ -49,7 +49,10 @@ jobs:
       - name: Check for NugetRepository
         shell: powershell
         run: |
-          if ($env:NugetRepository) {
+          if (-not $env:NugetAPIKey) {
+            Write-Warning "env:NugetAPIKey is not set"
+            $Return = "WARNING env:NugetAPIKey is not set"
+          } elseif ($env:NugetRepository) {
             $Return = "NugetRepository is '$($env:NugetRepository)' and NugetAPIKey is '$($env:NugetAPIKey.substring(0,4))***$($env:NugetAPIKey.substring($env:NugetAPIKey.length-4,4))'"
           } else {
             $Return = "NugetRepository is 'PSGallery' and NugetAPIKey is '$($env:NugetAPIKey.substring(0,4))***$($env:NugetAPIKey.substring($env:NugetAPIKey.length-4,4))'"
@@ -112,9 +115,11 @@ jobs:
         id: Update-ModuleVersion
         shell: powershell
         run: |
+          $ReleaseType = ($env:github_ref_name).Split('/')[1]
           Write-Host "Using NugetRepository: '$env:NugetRepository'"
-          Write-Host "  Setting ReleaseNotes to '$env:github_push_title'"
-          . .\Build.ps1 -UpdateRelease -AutoNewVersion -ReleaseNotes $env:github_push_title -ReleaseType ($env:github_ref_name).Split('/')[1]
+          Write-Host "  Setting ReleaseNotes: '$env:github_push_title'"
+          Write-Host "  Setting ReleaseType : '$ReleaseType'"
+          . .\Build.ps1 -UpdateRelease -AutoNewVersion -ReleaseNotes $env:github_push_title -ReleaseType $ReleaseType
           "ModuleVersion=$env:ModuleVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "Build Version $env:ModuleVersion" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
@@ -143,4 +148,6 @@ jobs:
       - name: Upload to PSRepository
         shell: powershell
         run: |
-          . .\Build.ps1 -UploadPSGallery
+          if ($env:NugetAPIKey) {
+            . .\Build.ps1 -UploadPSGallery
+          }
