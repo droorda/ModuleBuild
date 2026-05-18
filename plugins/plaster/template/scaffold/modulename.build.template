@@ -1455,9 +1455,13 @@ task DetectNewVersion LoadRequiredModules, LoadModuleManifest, {
                     if ($AddedFunctions.Count -gt 0) {
                         Write-Description DarkGray "Also detected $($AddedFunctions.Count) added: $($AddedFunctions -join ', ')" -Level 3
                     }
-                    Write-Description Yellow "Bumping Major version (semver: breaking change - removed functionality)" -Level 2
-                    $NewVersion.IncrementMajor()
-                    $NewVersionSource = "Removed Public Function (Major bump from $BaselineSource)"
+                    if ($NewVersion.Major -eq 0) {
+                        Write-Description Yellow "Major version suggested (semver: breaking change - removed functionality) Automatically Bumping from Version 0 Blocked" -Level 2
+                    } else {
+                        Write-Description Yellow "Bumping Major version (semver: breaking change - removed functionality)" -Level 2
+                        $NewVersion.IncrementMajor()
+                        $NewVersionSource = "Removed Public Function (Major bump from $BaselineSource)"
+                    }
                 }
                 elseif ($AddedFunctions.Count -gt 0) {
                     Write-Description Cyan "Detected $($AddedFunctions.Count) new public function(s) since $($BaselineSource): $($AddedFunctions -join ', ')" -Level 2
