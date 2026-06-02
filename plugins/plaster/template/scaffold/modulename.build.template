@@ -188,7 +188,7 @@ class SemanticVersion : IComparable {
             if ($this.IsGreaterThan($highest)) { return $False}
             if ($this.CompareTo($highest) -eq 0) {
                 if ($this.HasPrereleaseLabel()) {
-                    $this.PreReleaseNumber += 1
+                    $this.IncrementPreReleaseNumber()
                 } else {
                     $this.Patch += 1
                 }
@@ -200,7 +200,8 @@ class SemanticVersion : IComparable {
             if ($this.HasPrereleaseLabel()) {
                 if ($this.PrereleaseLabel -eq $highest.PrereleaseLabel) {
                     if ($this.PreReleaseNumber -le $highest.PreReleaseNumber) {
-                        $this.PreReleaseNumber = $highest.PreReleaseNumber + 1
+                        $this.PreReleaseNumber = $highest.PreReleaseNumber
+                        $this.IncrementPreReleaseNumber()
                     }
                 } else {
                     # if The current version has a prerelease label that is lower than the highest, increment the patch
@@ -271,6 +272,22 @@ class SemanticVersion : IComparable {
         $this.Patch += 1
         # $this.PrereleaseLabel = ""
         $this.PreReleaseNumber = 0
+    }
+
+    # New: Increment the prerelease counter, rolling over before it hits double digits.
+    # PowerShell module install/update commands sort prerelease labels lexically when the
+    # counter has no separator, so "rc10" sorts BELOW "rc2" and is not seen as newer than
+    # the currently installed version. Capping at 9 and rolling to the next Patch on the
+    # 10th iteration sidesteps that bug.
+    [void]IncrementPreReleaseNumber() {
+        if (($this.PreReleaseNumber + 1) -gt 9) {
+            $label = $this.PrereleaseLabel
+            $this.IncrementPatch()
+            $this.PrereleaseLabel  = $label   # IncrementPatch preserves the label today, but be explicit
+            $this.PreReleaseNumber = 1
+        } else {
+            $this.PreReleaseNumber += 1
+        }
     }
 }
 
@@ -434,6 +451,71 @@ function Assert-IsNonInteractiveShell {
     }
 
     return $true
+}
+
+function Resolve-SigningCertificatePath {
+    # Allow either an absolute path or one relative to BuildRoot so dev/CI can both work.
+    param([string]$Path)
+    if ([string]::IsNullOrWhiteSpace($Path)) { return $null }
+    if ([System.IO.Path]::IsPathRooted($Path)) { return $Path }
+    return Join-Path $BuildRoot $Path
+}
+
+function Get-CodeSigningCertificate {
+    # Loads the PFX once per build session and caches it. Both SignModuleFiles and the
+    # PublishPSGallery signing branch call this; lazy-loading avoids a password prompt
+    # (or env-var read) on builds where signing is disabled.
+    if ($Script:SigningCert) { return $Script:SigningCert }
+
+    $CertPath = Resolve-SigningCertificatePath $Script:BuildEnv.SigningCertificatePath
+    assert ($CertPath -and (Test-Path $CertPath)) "Signing certificate not found at '$CertPath'. Set SigningCertificatePath in the build environment or disable OptionSignModule/OptionSignNuGetPackage."
+
+    $PwdEnvName = $Script:BuildEnv.SigningCertificatePasswordEnv
+    assert (-not [string]::IsNullOrWhiteSpace($PwdEnvName)) "SigningCertificatePasswordEnv is not set."
+    $PwdValue = [Environment]::GetEnvironmentVariable($PwdEnvName)
+    assert (-not [string]::IsNullOrEmpty($PwdValue)) "Environment variable '$PwdEnvName' is empty. Provide the PFX password (e.g. `$env:$PwdEnvName = '...')."
+
+    # NetworkCredential avoids the PSAvoidUsingConvertToSecureStringWithPlainText warning while
+    # still producing a SecureString from the env-var-sourced password.
+    $SecurePwd = ([System.Net.NetworkCredential]::new('', $PwdValue)).SecurePassword
+    $flags = [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet -bor `
+             [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable
+    $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2 $CertPath, $SecurePwd, $flags
+
+    # Expiry check. Run once on initial load; cache hits skip this so we don't re-warn per task.
+    $now = Get-Date
+    $thumbShort = if ($cert.Thumbprint.Length -ge 12) { "$($cert.Thumbprint.Substring(0,8))...$($cert.Thumbprint.Substring($cert.Thumbprint.Length - 4))" } else { $cert.Thumbprint }
+    if ($cert.NotAfter -lt $now) {
+        throw "Code-signing certificate expired on $($cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss')). Subject: $($cert.Subject), Thumbprint: $thumbShort. Renew the certificate; signatures from an expired cert will not verify."
+    }
+    if ($cert.NotAfter -lt $now.AddDays(30)) {
+        $daysLeft = [int][math]::Ceiling(($cert.NotAfter - $now).TotalDays)
+        Write-Warning "Code-signing certificate expires in $daysLeft day(s) on $($cert.NotAfter.ToString('yyyy-MM-ddTHH:mm:ss')). Subject: $($cert.Subject), Thumbprint: $thumbShort. Renew the certificate before this date or future signed builds will fail verification."
+    }
+
+    $Script:SigningCert = $cert
+    return $Script:SigningCert
+}
+
+function Assert-DotNetSignCapable {
+    # Ensure `dotnet nuget sign` is available. Throws with actionable guidance if not.
+    # Cached so repeated callers (sign + push) skip the validation after the first hit.
+    if ($Script:DotNetSignChecked) { return }
+
+    $dotnet = Get-Command dotnet -ErrorAction SilentlyContinue
+    if (-not $dotnet) {
+        throw "dotnet CLI not found on PATH. Install .NET SDK 6.0.300 or later from https://aka.ms/dotnet-download to sign NuGet packages."
+    }
+
+    $sdkVersion = (& dotnet --version 2>&1) -join ' '
+    # `dotnet nuget sign --help` exits 0 when the verb exists, non-zero (with "Could not find a part of the path" or similar) otherwise.
+    $null = & dotnet nuget sign --help 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Installed dotnet (version $sdkVersion) does not support 'nuget sign'. Upgrade to .NET SDK 6.0.300 or later."
+    }
+
+    Write-Description Magenta "Using 'dotnet nuget' from .NET SDK $sdkVersion for signing and publishing." -Level 2
+    $Script:DotNetSignChecked = $true
 }
 
 if (Test-Path $BuildFile) {
@@ -1095,6 +1177,27 @@ task CreateModuleManifest CreateModulePSM1, {
     $null = Copy-Item -Path $ModuleManifestFullPath -Destination $PSD1OutputFile -Force
     Update-ModuleManifest -Path $PSD1OutputFile -FunctionsToExport $Script:FunctionsToExport
     Update-ModuleManifest -Path $PSD1OutputFile -AliasesToExport $Script:AliasesToExport
+
+}
+# Synopsis: Authenticode-sign all PowerShell files in the staged release
+task SignModuleFiles -if {$Script:BuildEnv.OptionSignModule} {
+    Write-Description Magenta 'Authenticode-signing module files' -accent
+    $StageReleasePath = Join-Path (Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder) $Script:BuildEnv.BaseReleaseFolder
+    $cert = Get-CodeSigningCertificate
+    Write-Description Magenta "Using certificate: $($cert.Subject) (thumbprint $($cert.Thumbprint))" -Level 2
+
+    $SignParams = @{
+        Certificate     = $cert
+        HashAlgorithm   = $Script:BuildEnv.SigningHashAlgorithm
+        TimestampServer = $Script:BuildEnv.SigningTimestampServer
+    }
+    $Targets = Get-ChildItem -Path $StageReleasePath -Recurse -File -Include *.ps1,*.psm1,*.psd1,*.ps1xml
+    Write-Description Magenta "Signing $($Targets.Count) file(s)" -Level 2
+    $Targets | ForEach-Object {
+        $sig = Set-AuthenticodeSignature -FilePath $_.FullName @SignParams
+        assert ($sig.Status -eq 'Valid') "Signing failed for $($_.FullName): $($sig.Status) - $($sig.StatusMessage)"
+        Write-Description DarkGray "Signed $($_.FullName.Substring($StageReleasePath.Length).TrimStart('\'))" -Level 3
+    }
 }
 # Synopsis: Run PSScriptAnalyzer against the assembled module
 task AnalyzeModuleRelease -if {$Script:BuildEnv.OptionAnalyzeCode} {
@@ -1227,7 +1330,70 @@ task PublishPSGallery LoadRequiredModules, InstallModule, {
 
     Write-Description Magenta "Publishing module to Repository:$($Script:BuildEnv.NugetRepository)" -accent
 
-    Publish-Module -Path $CurrentReleasePath -NuGetApiKey $Script:BuildEnv.NuGetApiKey -Repository $Script:BuildEnv.NugetRepository
+    Write-Description Magenta "OptionSignNuGetPackage = $($Script:BuildEnv.OptionSignNuGetPackage)" -Level 2
+    if (-not $Script:BuildEnv.OptionSignNuGetPackage) {
+        Write-Description Yellow 'OptionSignNuGetPackage is FALSE - publishing UNSIGNED nupkg via Publish-Module. Set OptionSignNuGetPackage = $true (or env var OptionSignNuGetPackage=true) to sign the package.' -Level 2
+        Publish-Module -Path $CurrentReleasePath -NuGetApiKey $Script:BuildEnv.NuGetApiKey -Repository $Script:BuildEnv.NugetRepository
+    }
+    else {
+        Write-Description Magenta 'OptionSignNuGetPackage enabled - packing locally so the .nupkg can be signed before publish.' -Level 2
+
+        # Resolve the real feed's push location up-front so we fail fast if it isn't registered.
+        $TargetRepo = Get-PSRepository -Name $Script:BuildEnv.NugetRepository -ErrorAction Stop
+        $PushSource = $TargetRepo.PublishLocation
+        if ([string]::IsNullOrWhiteSpace($PushSource)) { $PushSource = $TargetRepo.SourceLocation }
+        assert (-not [string]::IsNullOrWhiteSpace($PushSource)) "Repository '$($Script:BuildEnv.NugetRepository)' has no PublishLocation or SourceLocation."
+
+        # Validate `dotnet nuget sign` is available before doing any work that would need cleanup on failure.
+        Assert-DotNetSignCapable
+
+        # Load + validate cert before doing any registration so we don't leave a stale temp repo if signing config is bad.
+        $null = Get-CodeSigningCertificate  # validates path + password; we sign with the file directly below
+        $PfxFullPath = Resolve-SigningCertificatePath $Script:BuildEnv.SigningCertificatePath
+        $PwdValue    = [Environment]::GetEnvironmentVariable($Script:BuildEnv.SigningCertificatePasswordEnv)
+
+        $ScratchPath  = Join-Path $BuildRoot $Script:BuildEnv.ScratchFolder
+        $NupkgPath    = Join-Path $ScratchPath 'nupkg'
+        $LocalRepo    = $Script:BuildEnv.SigningLocalRepoName
+        $null = New-Item -Path $NupkgPath -ItemType Directory -Force
+
+        try {
+            # Re-registration safety: drop any stale registration from a previous failed build.
+            try { Unregister-PSRepository -Name $LocalRepo -ErrorAction Stop } catch {
+                Write-Verbose "No pre-existing '$LocalRepo' repository to unregister."
+            }
+
+            Register-PSRepository -Name $LocalRepo -SourceLocation $NupkgPath -PublishLocation $NupkgPath -InstallationPolicy Trusted
+
+            Write-Description Magenta "Packing module to local repository '$LocalRepo' at $NupkgPath" -Level 2
+            Publish-Module -Path $CurrentReleasePath -Repository $LocalRepo -NuGetApiKey 'unused'
+
+            $Nupkg = Get-ChildItem -Path $NupkgPath -Filter "$($Script:BuildEnv.ModuleToBuild).*.nupkg" -File |
+                     Sort-Object LastWriteTime -Descending | Select-Object -First 1
+            assert ($Nupkg) "Expected nupkg not produced in $NupkgPath"
+            Write-Description Magenta "Signing $($Nupkg.Name)" -Level 2
+
+            & dotnet nuget sign $Nupkg.FullName `
+                --certificate-path $PfxFullPath `
+                --certificate-password $PwdValue `
+                --timestamper $Script:BuildEnv.SigningTimestampServer `
+                --hash-algorithm $Script:BuildEnv.SigningHashAlgorithm `
+                --timestamp-hash-algorithm $Script:BuildEnv.SigningHashAlgorithm `
+                --overwrite 2>&1 | Write-Host
+            assert ($LASTEXITCODE -eq 0) "dotnet nuget sign failed with exit code $LASTEXITCODE"
+
+            Write-Description Magenta "Pushing signed package to $PushSource" -Level 2
+            & dotnet nuget push $Nupkg.FullName `
+                --source $PushSource `
+                --api-key $Script:BuildEnv.NuGetApiKey 2>&1 | Write-Host
+            assert ($LASTEXITCODE -eq 0) "dotnet nuget push failed with exit code $LASTEXITCODE"
+        }
+        finally {
+            try { Unregister-PSRepository -Name $LocalRepo -ErrorAction Stop } catch {
+                Write-Warning "Failed to unregister local repo '$LocalRepo': $($_.Exception.Message)"
+            }
+        }
+    }
 
 #     if (Get-Module $Script:BuildEnv.ModuleToBuild) {
 #         Write-Description Magenta "This module is already installed $($Script:BuildEnv.ModuleToBuild). Removing it" -Level 2
@@ -1631,7 +1797,15 @@ task GithubPushVersionRelease VersionCheck, {
     exec { git fetch } | Write-Verbose
     $changes = exec { git status --short }
     Write-Description Magenta "$($changes.count) Git Changes" -Level 3
-    if ($changes) {
+    $Manifestchanges = $changes | Where-Object {$_ -match '\.psd1'}
+    if ($Manifestchanges -and (-not [string]::IsNullOrEmpty($Script:Manifest.PrivateData.PSData.Prerelease))) {
+        Write-Description Yellow "Stashing manifest change $change for prerelease version $ManifestVersion" -Level 2
+        exec { git stash push -m "StashDuringBuild" -- $(($Manifestchanges | ForEach-Object {$_.trim().split(' ',2)[1]}) -join ' ') }
+        $changes = exec { git status --short }
+    }
+    if ([String]::IsNullOrEmpty($changes)) {
+        Write-Description Green "No changes to commit for version $ManifestVersion" -Level 2
+    } else {
         Write-Description DarkGray ($changes | Out-String) -level 2
         exec { git add . }
         if (-not [string]::IsNullOrEmpty($ReleaseNotes)) {
@@ -1649,6 +1823,11 @@ task GithubPushVersionRelease VersionCheck, {
 
     $changes = exec { git status --short }
     assert (-not $changes) "Please, commit changes.`n$changes"
+
+    if (git stash list | Where-Object {$_ -match 'StashDuringBuild'}) {
+        Write-Description Yellow "Applying stashed manifest changes for prerelease version $ManifestVersion" -Level 2
+        exec { git stash pop | Out-Null }
+    }
 }
 
 # Synopsis: Push to github
@@ -1713,7 +1892,7 @@ task AutomaticNewVersion DetectNewVersion
 task Tests RunMetaTests, RunUnitTests, RunIntergrationTests
 
 # Synopsis: Build the module
-task Build Configure, CodeHealthReport, PrepareStage, GetPublicFunctions, SanitizeCode, CreateHelp, CreateModulePSM1, CreateModuleManifest, AnalyzeModuleRelease, PushVersionRelease, PushCurrentRelease, CreateProjectHelp, PostBuildTasks, BuildSessionCleanup
+task Build Configure, CodeHealthReport, PrepareStage, GetPublicFunctions, SanitizeCode, CreateHelp, CreateModulePSM1, CreateModuleManifest, SignModuleFiles, AnalyzeModuleRelease, PushVersionRelease, PushCurrentRelease, CreateProjectHelp, PostBuildTasks, BuildSessionCleanup
 
 # Synopsis: Test, Build, install and Test load the module.
 task TestBuildAndInstallModule Tests, Build, InstallModule, TestImportInstalledModule, BuildSessionCleanup

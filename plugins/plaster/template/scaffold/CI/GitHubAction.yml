@@ -27,6 +27,9 @@ env:
   NugetRepositoryScriptPublishLocation: "${{ vars.NUGETREPOSITORYSCRIPTPUBLISHLOCATION }}"
   NugetAPIKey: ${{ secrets.NUGETAPIKEY }}
   GithubPAT: ${{ secrets.GITHUBPAT }}
+  CODE_SIGN_PWD: ${{ secrets.CODE_SIGN_PWD }}
+  OptionSignModule: ${{ vars.OPTIONSIGNMODULE }}
+  OptionSignNuGetPackage: ${{ vars.OPTIONSIGNNUGETPACKAGE }}
 
 # A workflow run is made up of one or more jobs that can run sequentially or in parallel
 
@@ -123,6 +126,44 @@ jobs:
           "ModuleVersion=$env:ModuleVersion" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "Build Version $env:ModuleVersion" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
+      - name: Import code-signing CA certificate
+        shell: powershell
+        env:
+          CODE_SIGN_CA_BASE64: ${{ secrets.CODE_SIGN_CA_BASE64 }}
+        run: |
+          # Imports the issuing CA's PUBLIC certificate into the runner's trusted root store
+          # so Set-AuthenticodeSignature can build a trusted chain when signing with an
+          # internal/private CA. The secret contains a base64-encoded .cer/.crt/.p7b file
+          # (no private key). Skip silently if not provided so builds that use publicly-trusted
+          # certs (PSGallery, DigiCert, etc.) don't need this secret.
+          if ($env:CODE_SIGN_CA_BASE64) {
+            $caPath = Join-Path $env:RUNNER_TEMP 'codesign-ca.cer'
+            [IO.File]::WriteAllBytes($caPath, [Convert]::FromBase64String($env:CODE_SIGN_CA_BASE64))
+            Write-Host "Importing CA certificate from $caPath into Cert:\LocalMachine\Root"
+            $imported = Import-Certificate -FilePath $caPath -CertStoreLocation Cert:\LocalMachine\Root
+            $imported | Format-Table Thumbprint, Subject -AutoSize | Out-String | Write-Host
+            "Imported $($imported.Count) CA certificate(s) into LocalMachine\Root" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          } else {
+            Write-Host "CODE_SIGN_CA_BASE64 not set; skipping CA import. (Set this secret if Set-AuthenticodeSignature fails with 'A certificate chain could not be built to a trusted root authority'.)"
+          }
+        # secrets.CODE_SIGN_CA_BASE64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes('codesign-ca.cer')) from your CA's PUBLIC cert (no private key)
+
+      - name: Decode code-signing certificate
+        shell: powershell
+        env:
+          CODE_SIGN_PFX_BASE64: ${{ secrets.CODE_SIGN_PFX_BASE64 }}
+        run: |
+          if ($env:CODE_SIGN_PFX_BASE64) {
+            Write-Host "Decoding code-signing certificate from CODE_SIGN_PFX_BASE64 environment variable"
+            New-Item -Path .\build\signing -ItemType Directory -Force | Out-Null
+            $pfxPath = '.\build\signing\codesign.pfx'
+            Write-Host "Writing code-signing certificate to $pfxPath"
+            [IO.File]::WriteAllBytes($pfxPath, [Convert]::FromBase64String($env:CODE_SIGN_PFX_BASE64))
+            "SigningCertificatePath=$pfxPath" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          } else {
+            Write-Warning "CODE_SIGN_PFX_BASE64 not set; signing tasks will fail unless OptionSignModule/OptionSignNuGetPackage are off."
+          }
+        # secrets.CODE_SIGN_PFX_BASE64 = [Convert]::ToBase64String([IO.File]::ReadAllBytes('codesign.pfx')) from your local PFX
       - name: BuildModule Version '${{ env.ModuleVersion }}'
         shell: powershell
         run: |

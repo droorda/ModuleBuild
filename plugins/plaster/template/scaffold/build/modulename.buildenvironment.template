@@ -66,7 +66,33 @@ if ($null -eq (Get-Variable | Where-Object {$_.name -eq 'BuildEnv'})) {
         NugetRepository = 'PSGallery'
         NugetAPIKey  = ''
 
+        # --- Code signing ----------------------------------------------------
+        # Opt-in flags. When false the new signing tasks are skipped via -if predicates.
+        OptionSignModule              = $False
+        OptionSignNuGetPackage        = $False
+        # Path to a PFX containing a code-signing certificate. May be relative to BuildRoot or absolute.
+        # File should NOT be committed; the *.pfx rule in .gitignore already covers the default location.
+        SigningCertificatePath        = 'build\signing\codesign.pfx'
+        # Name of the environment variable that holds the PFX password at build time.
+        SigningCertificatePasswordEnv = 'CODE_SIGN_PWD'
+        # RFC 3161 timestamp server. Without timestamping, signatures stop verifying once the cert expires.
+        SigningTimestampServer        = 'http://timestamp.digicert.com'
+        # Used for Set-AuthenticodeSignature -HashAlgorithm and nuget sign hash flags.
+        SigningHashAlgorithm          = 'SHA256'
+        # Transient PSRepository name used only to pack the nupkg before signing. Rename if it collides.
+        SigningLocalRepoName          = 'GC-LocalSign'
     }
+    if ($env:NugetRepository) {
+        $Script:BuildEnv.NugetRepository = $env:NugetRepository
+        $Script:BuildEnv.NugetAPIKey = $env:NugetAPIKey
+    }
+
+    # CI overrides for signing config. Env wins so GitHub Actions can supply runner-local paths.
+    if ($env:SigningCertificatePath)        { $Script:BuildEnv.SigningCertificatePath        = $env:SigningCertificatePath }
+    if ($env:SigningCertificatePasswordEnv) { $Script:BuildEnv.SigningCertificatePasswordEnv = $env:SigningCertificatePasswordEnv }
+    if ($env:SigningTimestampServer)        { $Script:BuildEnv.SigningTimestampServer        = $env:SigningTimestampServer }
+    if ($env:OptionSignModule)              { $Script:BuildEnv.OptionSignModule              = [bool]::Parse($env:OptionSignModule) }
+    if ($env:OptionSignNuGetPackage)        { $Script:BuildEnv.OptionSignNuGetPackage        = [bool]::Parse($env:OptionSignNuGetPackage) }
 
     ########################################
     # !! Please leave anything below this line alone !!
