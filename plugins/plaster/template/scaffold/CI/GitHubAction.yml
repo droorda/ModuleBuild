@@ -19,6 +19,19 @@ on:
   # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
+# Serialize builds per branch. Two runs on one branch race to `git tag -a
+# "v$ManifestVersion"` (SystemUpdates.build.ps1), which is unguarded -- the loser dies
+# with "fatal: tag 'vX' already exists" AFTER signing but BEFORE Upload to PSRepository,
+# leaving a tag on origin with no package behind it, blocking every later build
+# that computes the same version.
+#
+# cancel-in-progress is deliberately FALSE: a build that reaches "Push Release info to
+# github" has already tagged and pushed, so cancelling it midway is what creates the
+# orphan tag. Queue instead -- the second run then sees the first one's tag and computes
+# the next version cleanly.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
 env:
   NugetRepository: "${{ vars.NUGETREPOSITORY }}"
   NugetRepositorySourceLocation: "${{ vars.NUGETREPOSITORYSOURCELOCATION }}"
@@ -76,7 +89,7 @@ jobs:
 
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Get Push Details
         shell: powershell
@@ -119,7 +132,7 @@ jobs:
         shell: powershell
         run: |
           $ReleaseType = ($env:github_ref_name).Split('/')[1]
-          Write-Host "Using NugetRepository: '$env:NugetRepository'"
+          Write-Host "Using NugetRepository : '$env:NugetRepository'"
           Write-Host "  Setting ReleaseNotes: '$env:github_push_title'"
           Write-Host "  Setting ReleaseType : '$ReleaseType'"
           . .\Build.ps1 -UpdateRelease -AutoNewVersion -ReleaseNotes $env:github_push_title -ReleaseType $ReleaseType
