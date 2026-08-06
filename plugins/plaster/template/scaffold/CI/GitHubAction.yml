@@ -12,6 +12,7 @@ on:
       - "main"
       - 'release/**'
     paths-ignore:
+      - "*.psd1"
       - 'docs/**'
       - "**/*.md"
       - "appveyor.yml"
@@ -25,13 +26,20 @@ on:
 # leaving a tag on origin with no package behind it, blocking every later build
 # that computes the same version.
 #
-# cancel-in-progress is deliberately FALSE: a build that reaches "Push Release info to
-# github" has already tagged and pushed, so cancelling it midway is what creates the
-# orphan tag. Queue instead -- the second run then sees the first one's tag and computes
-# the next version cleanly.
+# cancel-in-progress is TRUE because a run whose branch has moved is already doomed: its
+# final `git push --follow-tags` is rejected non-fast-forward AFTER signing but BEFORE
+# "Upload to PSRepository", so it can never publish. Letting it finish only burns a runner
+# and delays the run that can.
+#
+# Cancelling is safe for almost the whole build: `git tag -a` (SystemUpdates.build.ps1
+# :1886) is runner-local, and a kill before the push at :1888 discards it with the VM.
+# The one exposed window is between "Push Release info to github" finishing and "Upload to
+# PSRepository" finishing -- seconds, during which the tag is on origin with no package
+# behind it, which blocks every later build that computes that version. To close it
+# entirely, upload to the feed BEFORE pushing the tag.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 env:
   NugetRepository: "${{ vars.NUGETREPOSITORY }}"
@@ -89,8 +97,19 @@ jobs:
           $Return | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
 
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      #
+      # fetch-tags is REQUIRED, not an optimisation. DetectNewVersion picks the next
+      # version as the max over five sources, one of which is `git tag -l`
+      # (SystemUpdates.build.ps1:1546) -- and checkout's default fetches no tags, so that
+      # source silently contributed NOTHING and version choice was effectively gallery-only.
+      # A tag on origin whose package never published is then invisible when the version is
+      # chosen, but arrives in the `git fetch` inside GithubPushVersionRelease, so the build
+      # dies on `git tag -a ... already exists` AFTER signing and never publishes. That is
+      # what blocked 0.3.13-beta on 2026-08-03.
       - name: Checkout code
         uses: actions/checkout@v7
+        with:
+          fetch-tags: true
 
       - name: Get Push Details
         shell: powershell
